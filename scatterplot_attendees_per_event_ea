@@ -1,0 +1,53 @@
+-- * Display the number of attendees at events that occurred since September in Every Action only. Retain fields for filtering in Sisense. Useful right now to identify gaps in the combined chart, but should probably be removed later.*
+-- Last updated 11/09/2020
+
+
+SELECT
+    coc_events.eventid AS ea_eventid
+    , LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS date
+        -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
+        -- ^Included for filtering.
+    , coc_locations.state As ea_state 
+        -- ^Included for filtering.
+    , CASE
+    	  WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
+          ELSE coc_events.eventcalendarname
+        END AS event_type
+        -- ^Relabeling Allies events from Courtwatch to Training
+  			-- ^Included for filtering.
+    , coc_events.eventname AS ea_eventname
+        -- ^Included for filtering.
+    , COUNT (DISTINCT coc_eventsignups.eventsignupid) AS ea_countattendees
+FROM tmc_van.coc_events
+
+LEFT JOIN tmc_van.coc_eventsignups
+	ON coc_events.eventid = coc_eventsignups.eventid
+LEFT JOIN tmc_van.coc_eventsignupsstatuses
+ 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
+LEFT JOIN tmc_van.coc_eventslocations
+	ON coc_eventslocations.eventid = coc_events.eventid
+     -- ^In EA, coc_eventslocations table joins event ids to a location ids (which is why I also need to join coc_locations table). However, this table does not include addresses.
+LEFT JOIN tmc_van.coc_locations
+	ON coc_locations.locationid = coc_eventslocations.locationid
+
+WHERE
+	coc_eventsignups.eventrolename = 'Attendee'
+    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
+  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
+    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
+  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
+    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
+  AND coc_events.eventname NOT LIKE '%Cancelled%'
+    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
+
+-- These lines for filtering in Sisense. !De-comment in Sisense!
+--  AND [ea_state=State]
+--  AND [ea_eventname=Event_Name]
+--  AND [eventtype=Event_Type]
+
+-- Event filter does not work, since event owner data exists in Mobilize only.
+
+GROUP BY 1,3,2,4,5
+    -- ^Group by event id first. The order of the rest doesn't matter.
+
+ORDER BY event_type DESC
