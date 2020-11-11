@@ -1,5 +1,5 @@
 -- * Count the total number of unique attendees that occurred since September in both Mobilize and Every Action. Retain fields for filtering in Sisense. *
--- Last updated 11/09/2020
+-- Last updated 11/10/2020
 
 -- Every Action events: Tables below beginning with "ea_" refer to Every Action.
 
@@ -78,7 +78,8 @@ FROM coc_mobilize_pac.timeslots
 LEFT JOIN coc_mobilize_pac.events 
 	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.participations
-	ON timeslots.id = participations.timeslot_id
+	ON events.id = participations.event_id 
+	AND timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
 
