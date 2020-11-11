@@ -1,5 +1,5 @@
 -- * Count the total number of events that occurred since September in both Mobilize and Every Action. Retain fields for filtering in Sisense. *
--- Last updated 11/09/2020
+-- Last updated 11/10/2020
 
 
 -- Every Action events: Tables below beginning with "ea_" refer to Every Action.
@@ -11,7 +11,7 @@ SELECT
   			-- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
   			-- ^Included for filtering.
    , coc_locations.state As ea_state 
-  			-- ^Included for filtering.
+  			-- ^Included for filtering.https://www.lucidchart.com/
    , CASE
     		WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
        		 ELSE coc_events.eventcalendarname
@@ -76,7 +76,8 @@ FROM coc_mobilize_pac.timeslots
 LEFT JOIN coc_mobilize_pac.events 
 	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.participations
-	ON timeslots.id = participations.timeslot_id
+	ON events.id = participations.event_id 
+	AND timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
 
@@ -119,7 +120,6 @@ SELECT
   , mob_events.mob_timeslotid AS timeslot_id
   , NVL (ea_events.ea_eventid, mob_events.mob_eventid) AS eventid
   , NVL (ea_events.eventtype, mob_events.eventtype) AS event_type
- 			-- ^Questions here! 
 	, NVL (ea_events.ea_state , mob_events.mob_state ) AS state
   , mob_eventowner AS event_owner
          
@@ -133,7 +133,7 @@ FULL OUTER JOIN mob_events
 
 SELECT 
   COUNT(eventid)
-		-- ^Questions here! Will this include duplicates? / Will I be losing events?
+		-- Counting eventid here which is a combination of EA ids and Mob ids. Not counting distinct, since events and shifts should already be deduped for Mobilize, and one event may have multiple shifts.
 FROM base
   
 
