@@ -1,0 +1,94 @@
+-- Last updated 11/10/2020
+
+
+--DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
+--CREATE TABLE coc_reporting.ea_eventattendance AS
+
+WITH mob_base AS (
+SELECT
+  timeslots.id AS mob_timeslotid
+        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
+    , events.id AS mob_eventid
+        -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
+  	, van_events.van_id AS mob_vaneventid
+  		-- ^For joining with events in EveryAction
+  
+  	-- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING:
+          , events.van_name AS mob_van_eventname
+              -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
+          , CASE
+                WHEN events.event_type = 'COMMUNITY' THEN 'Squad Action'
+                WHEN events.event_type = 'MEETING' THEN 'Squad Meeting'
+                WHEN events.event_type = 'OTHER' THEN 'Courtwatch Session'
+                WHEN events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
+                WHEN events.event_type = 'TEXT_BANK' THEN 'Textathon'
+                WHEN events.event_type = 'TRAINING' THEN 'Training'
+                ELSE events.event_type
+              END AS mob_eventtype
+              -- ^Format to match EA
+         , events.location__region AS mob_state
+              -- ^The label in the table is weird, but the result is for state.
+          , timeslots.start_date AS mob_date
+          , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+              -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
+              -- ^Combining the first and last name, since this field will just be for filtering events.
+  	
+  	, events.modified_date AS mob_modifieddate
+        -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+  	, participations.user_id AS mob_userid
+  	, participations.user__postal_code AS mob_userzip
+  			-- ^Choosing zip code data from participations instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be up to date.
+
+FROM coc_mobilize_pac.timeslots
+   -- ^Base table is timeslots instead of events, since there are multiple timeslots for one event.
+
+LEFT JOIN coc_mobilize_pac.events 
+	ON timeslots.event_id = events.id 
+LEFT JOIN coc_mobilize_pac.participations
+	ON timeslots.id = participations.timeslot_id
+LEFT JOIN coc_mobilize_pac.van_events 
+  ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
+
+WHERE participations.attended = 't'
+    -- ^Filter for Completed attendances, where 'attended' equals true.
+	AND timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
+    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
+  AND events.deleted_date IS NULL
+  AND events.title NOT LIKE '%Cancelled%'
+    -- ^Filter out deleted events, where there is NULL for an event deleted date. In case an event was accidentally not marked as deleted, also filtering out events with 'Cancelled' in the name.
+  AND events.organization__slug = 'colorofchangepac'
+    -- ^Filter just COC PAC events. If not included, will include events from other orgs that we promote.
+)
+,
+
+
+mob_dedup AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY mob_modifieddate DESC) AS timeslot_dup
+FROM mob_base
+)
+	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, which 1 being the most recently modified.
+
+
+SELECT
+		mob_timeslotid
+    , mob_eventid
+  	, mob_vaneventid
+    , mob_van_eventname
+    , mob_eventtype
+    , mob_state
+    , mob_date
+    , mob_eventowner
+  	, mob_modifieddate
+  	, mob_userid
+  	, mob_userzip
+  -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
+  
+FROM mob_dedup
+	WHERE timeslot_dup = 1
+  -- ^This final select is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
+
+
+--Grant access:
+--GRANT SELECT ON coc_reporting.attendeesperevent_ea TO GROUP coc;
+--GRANT ALL ON coc_reporting.attendeesperevent_ea TO jharris1;
