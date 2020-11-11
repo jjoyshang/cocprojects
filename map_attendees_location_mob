@@ -45,7 +45,8 @@ FROM coc_mobilize_pac.timeslots
 LEFT JOIN coc_mobilize_pac.events 
 	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.participations
-	ON timeslots.id = participations.timeslot_id
+	ON events.id = participations.event_id 
+	AND timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
 LEFT JOIN tmc_misc.zip_lat_long
