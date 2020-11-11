@@ -45,7 +45,8 @@ FROM coc_mobilize_pac.timeslots
 LEFT JOIN coc_mobilize_pac.events 
 	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.participations
-	ON timeslots.id = participations.timeslot_id
+	ON events.id = participations.event_id 
+  AND timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
 
@@ -73,13 +74,12 @@ FROM mob_base
 SELECT
 		mob_timeslotid
     , mob_eventid
-  	, mob_vaneventid
+    , mob_vaneventid
     , mob_van_eventname
     , mob_eventtype
     , mob_state
     , mob_date
     , mob_eventowner
-  	, mob_modifieddate
   	, mob_userid
   	, mob_userzip
   -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
