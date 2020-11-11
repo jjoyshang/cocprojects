@@ -1,5 +1,5 @@
 -- * Display the total number of shifts in Mobilize. Useful right now to identify gaps in the combined chart, but should probably be removed later. *
--- Last updated 11/09/2020
+-- Last updated 11/10/2020
 
 
 WITH mob_events_dup AS (
@@ -39,7 +39,8 @@ FROM coc_mobilize_pac.timeslots
 LEFT JOIN coc_mobilize_pac.events 
 	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.participations
-	ON timeslots.id = participations.timeslot_id
+	ON events.id = participations.event_id 
+  AND timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
 
@@ -68,10 +69,9 @@ SELECT
 	COUNT (mob_timeslotid)
 FROM mob_dedup
 	WHERE timeslot_dup = 1
-  -- ^This CTE is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
+  -- ^The final select is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
 	-- ^Since we have already deduped events and timeslots, each remaining timeslot should correlate to a unique event shift. 
   
-
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
 -- 	AND [mob_state=State]
