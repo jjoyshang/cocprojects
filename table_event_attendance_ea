@@ -1,7 +1,9 @@
+-- * Create a table that pulls together relevant fields from EveryAction for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
 -- Last updated 11/10/2020
 
---DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
---CREATE TABLE coc_reporting.ea_eventattendance AS
+
+DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
+CREATE TABLE coc_reporting.ea_eventattendance AS
 
 
 WITH ea_base AS (
@@ -74,8 +76,8 @@ SELECT
     
 FROM ea_dedup
 WHERE ea_eventid_dup = 1
- ;
+;
 
 -- Grant access:
---GRANT SELECT ON coc_reporting.attendeesperevent_ea TO GROUP coc;
---GRANT ALL ON coc_reporting.attendeesperevent_ea TO jharris1;
+GRANT SELECT ON coc_reporting.ea_eventattendance TO GROUP coc;
+GRANT ALL ON coc_reporting.ea_eventattendance TO jharris1;
