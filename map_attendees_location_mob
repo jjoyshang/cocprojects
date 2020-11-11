@@ -1,49 +1,43 @@
 -- * Display the location of attendees to events, versus the assigned location of the event, since in a virtual organizing space volunteers may join events from all over the country. Temporary chart that should probably be removed when a combined EA and Mob chart is created. *
 -- Last updated 11/10/2020
 
-
-WITH mob_events_dup AS (
+WITH mob_base AS (
 SELECT
-    timeslots.id AS mob_timeslotid
+  timeslots.id AS mob_timeslotid
         -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
     , events.id AS mob_eventid
         -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
-    , events.van_name AS mob_van_eventname
-  			-- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
-  			-- ^Included for filtering. May also be interesting to display in the tooltip to see what events volunteers in a location have attended.
-  	, CASE
-          WHEN events.event_type = 'COMMUNITY' THEN 'Squad Action'
-          WHEN events.event_type = 'MEETING' THEN 'Squad Meeting'
-          WHEN events.event_type = 'OTHER' THEN 'Courtwatch Session'
-          WHEN events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
-          WHEN events.event_type = 'TEXT_BANK' THEN 'Textathon'
-          WHEN events.event_type = 'TRAINING' THEN 'Training'
-          ELSE events.event_type
-        END AS event_type
-        -- Format to match EA
-  			-- ^Included for filtering.
-    , events.location__region AS mob_state
-        -- ^The label in the table is weird, but the result is for state.
-        -- ^Included for filtering. For instance, it would be interesting to see if for an event in Georgia, the attendees were also from Georgia.
-    , timeslots.start_date AS date
-        -- ^Included for filtering.
-  	, (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
-        -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
-  			-- ^Combining the first and last name, since this field will just be for filtering events.
-  			-- ^Included for filtering.
-    , events.modified_date AS mob_modifieddate
-        -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc.
---  	, van_events.van_id AS mob_vaneventid
-  				-- ^hiding for now until needed to join with EA
-  	, participations.id AS mob_participationsid
-    , COUNT (DISTINCT participations.user_id) AS mob_countuserid
-  			-- ^Included to count number of volunteers from a specific zipcode.
-    , participations.user__postal_code AS mob_userzip
+  
+  	-- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING:
+          , events.van_name AS mob_van_eventname
+              -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
+          , CASE
+                WHEN events.event_type = 'COMMUNITY' THEN 'Squad Action'
+                WHEN events.event_type = 'MEETING' THEN 'Squad Meeting'
+                WHEN events.event_type = 'OTHER' THEN 'Courtwatch Session'
+                WHEN events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
+                WHEN events.event_type = 'TEXT_BANK' THEN 'Textathon'
+                WHEN events.event_type = 'TRAINING' THEN 'Training'
+                ELSE events.event_type
+              END AS event_type
+              -- ^Format to match EA
+         , events.location__region AS mob_state
+              -- ^The label in the table is weird, but the result is for state.
+          , timeslots.start_date AS date
+          , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+              -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
+              -- ^Combining the first and last name, since this field will just be for filtering events.
+  	
+  	, events.modified_date AS mob_modifieddate
+        -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+  	, participations.user_id AS mob_userid
+  	, participations.user__postal_code AS mob_userzip
+  			-- ^Choosing zip code data from participations instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be up to date.
   	, zip_lat_long.lat AS latitude
     , zip_lat_long.lng AS longitude
   			-- ^Latitude and longitude for mapping in Sisense.
---  	, participations.modified_date AS mob_participations_moddate
-  			-- ^Keeping for if I need to dedup participations
+  --  , van_events.van_id AS mob_vaneventid
+  		-- ^De-comment when joining with EA in the future.
 
 FROM coc_mobilize_pac.timeslots
    -- ^Base table is timeslots instead of events, since there are multiple timeslots for one event.
@@ -54,6 +48,11 @@ LEFT JOIN coc_mobilize_pac.participations
 	ON timeslots.id = participations.timeslot_id
 LEFT JOIN coc_mobilize_pac.van_events 
   ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
+LEFT JOIN tmc_misc.zip_lat_long
+  ON zip_lat_long.zip = participations.user__postal_code
+-- LEFT JOIN coc_mobilize_pac.van_events 
+--  ON van_events.event_id = events.id
+				-- ^De-comment when joining with EA in the future.
 
 WHERE participations.attended = 't'
     -- ^Filter for Completed attendances, where 'attended' equals true.
@@ -64,25 +63,22 @@ WHERE participations.attended = 't'
     -- ^Filter out deleted events, where there is NULL for an event deleted date. In case an event was accidentally not marked as deleted, also filtering out events with 'Cancelled' in the name.
   AND events.organization__slug = 'colorofchangepac'
     -- ^Filter just COC PAC events. If not included, will include events from other orgs that we promote.
-
-GROUP BY 2,3,1,2,4,5,6,8,9
-   -- ^Group by timeslot_id and event_id first.
 )
 ,
 
 
 mob_dedup AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY mob_modifieddate DESC) AS timeslot_dup
-FROM mob_events_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY mob_modifieddate DESC) AS timeslot_dup
+FROM mob_base
 )
-  -- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, which 1 being the most recently modified.
+	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, which 1 being the most recently modified.
 
 
 SELECT * 
 FROM mob_dedup
 	WHERE timeslot_dup = 1
-  -- ^This CTE is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
+  -- ^This final select is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
 
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
@@ -90,5 +86,3 @@ FROM mob_dedup
 --  AND [mob_van_eventname=Event_Name]
 --  AND [event_type=Event_Type]
 --  AND [mob_eventowner=Event_Owner]
-
-ORDER BY event_type DESC
