@@ -1,74 +1,28 @@
 -- * Display the location of attendees to events in EveryAction, versus the assigned location of the event, since in a virtual organizing space volunteers may join events from all over the country. Temporary chart that should probably be removed when a combined EA and Mob chart is created. *
--- Last updated 11/10/2020
+
+-- Base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+---- This table contains all events and participants for those events in Every Action.
 
 
-WITH ea_base AS (
 SELECT
-    coc_events.eventid AS ea_eventid
-    , LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS date
-        -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
-        -- ^Included for filtering.
-    , coc_locations.state As ea_state 
-        -- ^Included for filtering.
-    , CASE
-    	  WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
-          ELSE coc_events.eventcalendarname
-        END AS event_type
-        -- ^Relabeling Allies events from Courtwatch to Training
-  			-- ^Included for filtering.
-    , coc_events.eventname AS ea_eventname
-        -- ^Included for filtering.
-  	, coc_eventsignups.vanid AS ea_attendeesid
-  	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
-  	, coc_contactsaddresses_mym.datemodified AS zip_datemodified
-  			-- ^Used to dedup
-    , zip_lat_long.lat AS latitude
+		ea_eventid
+    , ea_date
+    , ea_eventname
+  	, ea_eventtype
+    , ea_eventstate 
+  	, ea_attendeesid
+	  , zip_lat_long.lat AS latitude
     , zip_lat_long.lng AS longitude
   			-- ^Latitude and longitude for mapping in Sisense
+FROM coc_reporting.ea_eventattendance
 
-FROM tmc_van.coc_events
-
-LEFT JOIN tmc_van.coc_eventsignups
-	ON coc_events.eventid = coc_eventsignups.eventid
-LEFT JOIN tmc_van.coc_eventsignupsstatuses
- 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
-LEFT JOIN tmc_van.coc_eventslocations
-	ON coc_eventslocations.eventid = coc_events.eventid
-     -- ^In EA, coc_eventslocations table joins event ids to a location ids (which is why I also need to join coc_locations table). However, this table does not include addresses.
-LEFT JOIN tmc_van.coc_locations
-	ON coc_locations.locationid = coc_eventslocations.locationid
-LEFT JOIN tmc_van.coc_contactsaddresses_mym
-  ON coc_contactsaddresses_mym.vanid = coc_eventsignups.vanid
 LEFT JOIN tmc_misc.zip_lat_long
-  ON zip_lat_long.zip = coc_contactsaddresses_mym.zip5
+  ON zip_lat_long.zip = ea_eventattendance.ea_attendeeszip
 
-WHERE
-	coc_eventsignups.eventrolename = 'Attendee'
-    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
-  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
-    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
-  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
-    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
-  AND coc_events.eventname NOT LIKE '%Cancelled%'
-    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
-)
-,
-
-
-ea_dedup AS (
- SELECT *
-   , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY zip_datemodified DESC) as ea_eventid_dup
- FROM ea_base
- )
-  -- If no dedup, a ton of duplicates
-
- 
-SELECT *
-FROM ea_dedup
-WHERE ea_eventid_dup = 1
 -- These lines for filtering in Sisense. !De-comment in Sisense!
---  AND [ea_state=State]
+--WHERE [ea_state=State]
 --  AND [ea_eventname=Event_Name]
---  AND [eventtype=Event_Type]
+--  AND [ea_eventtype=Event_Type]
 
 -- Event owner filter does not work, since event owner data exists in Mobilize only.
+;
