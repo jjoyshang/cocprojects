@@ -1,4 +1,4 @@
--- THIS VERSION TESTING TO JOIN EVENT, TIMESLOT, VANEVENT ID AND DEDUPE. THEN JOIN PARTICIPANT AND DEDUP
+-- THIS VERSION TESTING TO JOIN EVENT + TIMESLOT AND DEDUPE. THEN JOIN PARTICIPANT AND DEDUP
 -- * Create a table that pulls together relevant fields from Mobilize for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
 
 
@@ -27,7 +27,7 @@ SELECT
                 ELSE events.event_type
               END AS mob_eventtype
          	   -- ^Format to match EA
-  			, events.location__region AS mob_state
+  			, events.location__region AS mob_eventstate
      			   -- ^The label in the table is weird, but the result is for state.
   			, timeslots.start_date AS mob_date
    		  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
@@ -38,7 +38,6 @@ SELECT
         -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
 
 FROM coc_mobilize_pac.events
----- ! ^Changed to reference events first !
 
 LEFT JOIN coc_mobilize_pac.timeslots
 	ON timeslots.event_id = events.id 
@@ -98,15 +97,17 @@ FROM mob_base2
 SELECT
 		mob_timeslotid
     , mob_eventid
+    , (mob_eventid ||'.'|| mob_timeslotid) AS mob_shiftid
+    		-- ^Adding a combined field for eventid + shiftid. This will help if joining with events in Every Action.
     , mob_vaneventid
     , mob_eventname
     , mob_eventtype
-    , mob_state
+    , mob_eventstate
     , mob_date
     , mob_eventowner
   	, mob_userid
   	, mob_userzip
-  -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
+  -- ^Selecting only fields that I want in the final table. Leaving out for deduping.
   
 FROM mob_deduping2
 	WHERE user_dup = 1
