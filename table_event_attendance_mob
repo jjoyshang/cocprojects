@@ -73,8 +73,8 @@ mob_base2 AS (
 SELECT
     *
     , participations.user_id AS mob_userid
-  	, participations.user__postal_code AS mob_userzip
-  			-- ^Choosing zip code data from participations instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be up to date.
+  	, participations.postal_code_at_signup AS mob_userzip
+  			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
 
 FROM mob_dedup
 
