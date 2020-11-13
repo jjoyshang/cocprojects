@@ -1,144 +1,33 @@
--- * Count the total number of events that occurred since September in both Mobilize and Every Action. Retain fields for filtering in Sisense. *
--- Last updated 11/10/2020
+-- * Count the number of events in both Every Action and Mobilize (not counting duplicates). Retain fields for filtering in Sisense. *
+
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
 
 
--- Every Action events: Tables below beginning with "ea_" refer to Every Action.
-
-WITH ea_events AS (
+-- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
+WITH base AS (
 SELECT
-   coc_events.eventid AS ea_eventid
-  	, LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS date
-  			-- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
-  			-- ^Included for filtering.
-   , coc_locations.state As ea_state 
-  			-- ^Included for filtering.https://www.lucidchart.com/
-   , CASE
-    		WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
-       		 ELSE coc_events.eventcalendarname
-     		END AS eventtype
-  				-- ^Relabeling Allies events from Courtwatch to Training
-  				-- ^Included for filtering.
-   , coc_events.eventname AS ea_eventname
-  			-- ^Included for filtering.
-FROM tmc_van.coc_events
-
-LEFT JOIN tmc_van.coc_eventsignups
-	ON coc_events.eventid = coc_eventsignups.eventid
-LEFT JOIN tmc_van.coc_eventsignupsstatuses
- 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
-LEFT JOIN tmc_van.coc_eventslocations
-	ON coc_eventslocations.eventid = coc_events.eventid 
-  			-- ^In EA, coc_eventslocations table joins event ids to a location ids (which is why I also need to join coc_locations table). However, this table does not include addresses.
-LEFT JOIN tmc_van.coc_locations
-	ON coc_locations.locationid = coc_eventslocations.locationid
-
-WHERE
-	coc_eventsignups.eventrolename = 'Attendee'
-  		-- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
-  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
-  		-- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
-  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
-  		-- ^Filter between Sept 2020 and the current date for the 2020 General election season.
-  AND coc_events.eventname NOT LIKE '%Cancelled%'
-  		-- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
-)
-,
-
-
--- Mobilize America PAC events: Tables below beginning with "mob_" refer to Mobilize.
-
-mob_events_dup AS (
-SELECT
-    events.title AS mob_eventname
-    , timeslots.id AS mob_timeslotid
-  			-- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
-    , events.id AS mob_eventid
-  			-- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
-    , events.event_type AS eventtype
-  			-- ^Included for filtering.
-    , events.location__region AS mob_state
-  			-- ^The label in the table is weird, but the result is for state.
-  			-- ^Included for filtering.
-    , timeslots.start_date AS date
-  			-- ^Included for filtering.
-  	, van_events.van_id AS mob_vaneventid
-  			-- ^Included in order to join events in Mobilize and Every Action below.
-  	, (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
-  			-- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
-  			-- ^Combining the first and last name, since this field will just be for filtering events.
-  			-- ^Included for filtering.
-  , events.modified_date AS mob_modifieddate
-  			-- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
-
-FROM coc_mobilize_pac.timeslots
-  	-- ^Base table is timeslots instead of events, since there are multiple timeslots for one event.
-
-LEFT JOIN coc_mobilize_pac.events 
-	ON timeslots.event_id = events.id 
-LEFT JOIN coc_mobilize_pac.participations
-	ON events.id = participations.event_id 
-	AND timeslots.id = participations.timeslot_id
-LEFT JOIN coc_mobilize_pac.van_events 
-  ON coc_mobilize_pac.van_events.event_id = coc_mobilize_pac.events.id
-
-WHERE participations.attended = 't'
-  	-- ^Filter for Completed attendances, where 'attended' equals true.
-	AND timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
-  	-- ^Filter between Sept 2020 and the current date for the 2020 General election season.
-  AND events.deleted_date IS NULL
-  AND events.title NOT LIKE '%Cancelled%'
-  	-- ^Filter out deleted events, where there is NULL for an event deleted date. In case an event was accidentally not marked as deleted, also filtering out events with 'Cancelled' in the name.
-  AND events.organization__slug = 'colorofchangepac'
-  	-- ^Filter just COC PAC events. If not included, will include events from other orgs that we promote.
-)
-,
-
-
-mob_dedup AS (
-SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY mob_modifieddate DESC) AS timeslot_dup
-FROM mob_events_dup
-)
-	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, which 1 being the most recently modified.
-,
-
-
-mob_events AS (
-SELECT * 
-FROM mob_dedup
-	WHERE timeslot_dup = 1
-)
--- ^This CTE is including the first row for every unique event and timeslot (but keep in mind their will be duplicates within just events and just timeslots).
-,
-
-
--- For the following CTE, which is joining events from EA and Mobilize, I am referencing EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
-base AS (
-SELECT 
-	ea_events.date AS date
-  , ea_events.ea_eventname AS event_name
-  , mob_events.mob_timeslotid AS timeslot_id
-  , NVL (ea_events.ea_eventid, mob_events.mob_eventid) AS eventid
-  , NVL (ea_events.eventtype, mob_events.eventtype) AS event_type
-	, NVL (ea_events.ea_state , mob_events.mob_state ) AS state
+	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
+  , NVL (ea_date, mob_date::varchar) AS date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+	, NVL (ea_eventstate, mob_eventstate) AS event_state
   , mob_eventowner AS event_owner
-         
-FROM ea_events
 
-FULL OUTER JOIN mob_events
-	ON mob_events.mob_vaneventid = ea_events.ea_eventid
-  	-- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+FROM coc_reporting.ea_eventattendance
+
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
 )
 
-
-SELECT 
-  COUNT(eventid)
-		-- Counting eventid here which is a combination of EA ids and Mob ids. Not counting distinct, since events and shifts should already be deduped for Mobilize, and one event may have multiple shifts.
+SELECT
+  COUNT (DISTINCT event_id)
 FROM base
-  
+
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
--- WHERE [state=State]
+--WHERE [event_state=State]
 --  AND [event_name=Event_Name]
 --  AND [event_type=Event_Type]
 --  AND [event_owner=Event_Owner]
