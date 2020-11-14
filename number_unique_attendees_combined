@@ -19,6 +19,7 @@ FROM coc_reporting.ea_eventattendance
 
 FULL OUTER JOIN coc_reporting.mob_eventattendance
 	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
   -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
 
 )
