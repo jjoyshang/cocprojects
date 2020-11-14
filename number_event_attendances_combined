@@ -4,40 +4,7 @@
 -- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
 
 
-WITH ea_base AS (
-SELECT
-  ea_eventid	
-	, ea_date
-	, ea_eventname
-	, ea_eventtype
-	, ea_eventstate
-  , COUNT (ea_attendeesid) AS ea_countattendees
-  		-- Since this query's purpose is to count attendances, not unique attendees, I am NOT counting by distinct. This way, it will count if the same member attended multiple events.
-FROM coc_reporting.ea_eventattendance
-
-GROUP BY 1,2,3,4,5
-   -- Group by event id first. The rest don't matter.
-),
-
-mob_base AS (
-SELECT 
-	mob_timeslotid
-	, mob_eventid
-	, mob_shiftid
-	, mob_vaneventid
-	, mob_eventname
-	, mob_eventtype
-	, mob_eventstate
-	, mob_date
-	, mob_eventowner
-  , COUNT (mob_userid) AS mob_countattendees
-FROM coc_reporting.mob_eventattendance
-
-GROUP BY 3,1,2,4,5,6,7,8,9
-   -- Group by shift id first. The rest don't matter.
-),
-
-combined AS (
+WITH base AS (
 SELECT
 -- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
 	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
@@ -46,19 +13,24 @@ SELECT
   , NVL (ea_eventtype, mob_eventtype) AS event_type
 	, NVL (ea_eventstate, mob_eventstate) AS event_state
   , mob_eventowner AS event_owner
-  , NVL(ea_countattendees, mob_countattendees) AS count_attendees
+  , COUNT (NVL(ea_attendeesid, mob_userid)) AS count_attendees
+      -- Since this query's purpose is to count attendances, not unique attendees, I am NOT counting by distinct. This way, it will count if the same member attended multiple events.
 
-FROM ea_base
+FROM coc_reporting.ea_eventattendance
 
-FULL OUTER JOIN mob_base
-	ON mob_base.mob_vaneventid = ea_base.ea_eventid
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
   -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+  
+GROUP BY 1,2,3,4,5,6
+  -- Group by event id first. The rest doesn't matter.
 )
 
 
 SELECT
   SUM (count_attendees)
-FROM combined
+FROM base
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
 --WHERE [event_state=State]
