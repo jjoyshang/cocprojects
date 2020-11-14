@@ -1,0 +1,40 @@
+-- * Display the location of attendees to events in EveryAction and Mobilize, versus the assigned location of the event, since in a virtual organizing space volunteers may join events from all over the country. Retain fields for filtering in Sisense. *
+
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+
+
+WITH base AS (
+SELECT
+	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
+  , NVL (ea_date, mob_date::varchar) AS date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+	, NVL (ea_eventstate, mob_eventstate) AS event_state
+  , mob_eventowner AS event_owner
+  , NVL (ea_attendeesid, mob_userid) AS attendee_id
+  , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
+
+FROM coc_reporting.ea_eventattendance
+
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+)
+
+SELECT
+	*
+  , zip_lat_long.lat AS latitude
+  , zip_lat_long.lng AS longitude
+  	-- ^Latitude and longitude for mapping in Sisense.
+FROM base
+
+LEFT JOIN tmc_misc.zip_lat_long
+	ON zip_lat_long.zip = base.attendee_zip
+
+-- These lines for filtering in Sisense. !De-comment in Sisense!
+--WHERE [event_state=State]
+--  AND [event_name=Event_Name]
+--  AND [event_type=Event_Type]
+--  AND [event_owner=Event_Owner]
