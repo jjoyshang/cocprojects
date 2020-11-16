@@ -20,7 +20,5 @@ FROM coc_reporting.mob_eventattendance
 --  AND [mob_eventtype=Event_Type]
 --  AND [mob_eventowner=Event_Owner]
 
--- Can't include filter for event name in Sisense, which is referring to EA event name.
-
 GROUP BY 3,2,4,5,6,7,8,9
 	-- Group by event id then timeslot id. Orer of the rest don't matter
