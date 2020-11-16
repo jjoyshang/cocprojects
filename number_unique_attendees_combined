@@ -31,6 +31,5 @@ FROM base
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
 --WHERE [event_state=State]
---  AND [event_name=Event_Name]
 --  AND [event_type=Event_Type]
 --  AND [event_owner=Event_Owner]
