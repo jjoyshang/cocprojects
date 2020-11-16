@@ -1,4 +1,4 @@
--- * Count the number of events in both Every Action and Mobilize (not counting duplicates). Retain fields for filtering in Sisense. *
+-- * Count the number of events from Every Action and Mobilize (not counting duplicates). Retain fields for filtering in Sisense. *
 
 -- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
 -- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
@@ -28,6 +28,5 @@ FROM base
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
 --WHERE [event_state=State]
---  AND [event_name=Event_Name]
 --  AND [event_type=Event_Type]
 --  AND [event_owner=Event_Owner]
