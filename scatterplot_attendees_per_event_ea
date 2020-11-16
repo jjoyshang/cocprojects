@@ -15,7 +15,6 @@ FROM coc_reporting.ea_eventattendance
 
 -- These lines for filtering in Sisense. !De-comment in Sisense!
 --WHERE [ea_state=State]
---  AND [ea_eventname=Event_Name]
 --  AND [ea_eventtype=Event_Type]
 
 -- Event owner filter does not work, since event owner data exists in Mobilize only.
