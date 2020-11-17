@@ -1,0 +1,128 @@
+-- NEXT join to ts.ntl_current
+
+-- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include this who have attended one event or more since Sept 2020. *
+---- Only joining to attendance data in Every Action currently.
+---- Deduping has been checked 11/16/2020
+---- Some fields that could be added, but would require joining to ts.ntl_current: marital status, registered party affiliation, household net worth, voting history, education level, occupation, donations to organizations, urbanicity (?)
+---- Keep in mind: vb_ fields are given by people directly, ts_tsmart_ are models.
+
+
+WITH base AS (
+SELECT
+	coc_identities.person_id AS person_id
+  , coc_member_profile.vb_voterbase_id AS voterbase_id
+  , coc_member_profile.vb_smartvan_id AS smartvan_id
+  		-- ?? ^Some nulls in final table. Do I need to include?
+  , coc_member_profile.vb_tsmart_state AS state
+  , coc_member_profile.vb_tsmart_zip AS zipcode
+  , coc_member_profile.vb_tsmart_first_name AS first_name
+  , coc_member_profile.vb_tsmart_last_name AS last_name
+ 	, coc_member_profile.vb_voterbase_age AS age
+  , coc_member_profile.gender AS gender
+  , coc_member_profile.race AS race
+  		-- !! ^To improve, refer to race models in ts.ntl_current. Select race with highest/lowest (?) score?
+  , coc_person_fields.vendor
+  , coc_person_fields.primary_key AS ea_id
+  		-- ^Include to join to Every Action.
+  , coc_person_fields.updated_at
+
+-- Start with coc_identities as base, since other tables in tmc_activist_pool refer back to it.
+FROM tmc_activist_pool.coc_identities
+
+-- coc_member_profile table is join to the voterfile
+INNER JOIN tmc_activist_pool.coc_member_profile
+	ON coc_member_profile.matchbackid = coc_identities.person_id
+-- coc_person_fields table is join to records in different platforms
+LEFT JOIN tmc_activist_pool.coc_person_fields
+	ON coc_identities.person_id = coc_person_fields.person_id
+
+WHERE vb_voterbase_deceased_flag IS NULL
+  AND coc_person_fields.vendor = 'every_action'
+  	-- !! ^Filter to only include Every Action. Maybe should also include Mobilize, since syncing from Mob to EA is not always consistent. But is a lot easier to only join to EA.
+  AND vb_tsmart_state = 'CA'
+  	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
+),
+
+
+deduping1 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY updated_at DESC) AS person_dupe
+FROM base
+),
+
+
+dedup1 AS (
+SELECT *
+FROM deduping1
+WHERE person_dupe = 1
+),
+
+
+ea_join AS (
+-- This select to filter persons in memberbase who have attended an event in Every Action since Sept 2020.
+SELECT 
+	person_id
+  , voterbase_id
+  , smartvan_id
+  , state
+  , zipcode
+  , first_name
+  , last_name
+ 	, age
+  , gender
+  , race
+  , ea_id
+  , coc_eventsignups.datetimeoffsetbegin
+  		-- ^Include for deduping
+FROM dedup1
+
+-- Joining to contacts, event sign ups, and events in Every Action.
+LEFT JOIN tmc_van.coc_contacts_mym
+	ON coc_contacts_mym.vanid = dedup1.ea_id
+LEFT JOIN tmc_van.coc_eventsignups
+	ON coc_eventsignups.vanid = coc_contacts_mym.vanid
+LEFT JOIN tmc_van.coc_eventsignupsstatuses
+ 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
+-- Joining events table to be able to filter for event date and name.
+LEFT JOIN tmc_van.coc_events
+	ON coc_events.eventid = coc_eventsignups.eventid
+
+WHERE
+	coc_eventsignups.eventrolename = 'Attendee'
+    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
+  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
+    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
+  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
+    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
+  AND coc_events.eventname NOT LIKE '%Cancelled%'
+    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
+),
+
+
+deduping2 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY datetimeoffsetbegin DESC) AS eventsignup_dupe
+FROM ea_join
+)
+
+
+SELECT
+		person_id
+  , voterbase_id
+  , smartvan_id
+  , ea_id
+  , first_name
+  , last_name
+  , state
+  , zipcode
+ 	, age
+  , gender
+  , race
+FROM deduping2
+WHERE eventsignup_dupe = 1
+
+;
+
+
+-- 15,057,338 unique person ids in coc_identities
+---- 5,730,569 unique voterbase ids in coc_member_profile (coc members that match to voter file)
