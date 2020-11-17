@@ -1,8 +1,7 @@
--- NEXT join to ts.ntl_current
+-- NEXT join to ts.ntl_current, also Mobilize
 
 -- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include this who have attended one event or more since Sept 2020. *
 ---- Only joining to attendance data in Every Action currently.
----- Deduping has been checked 11/16/2020
 ---- Some fields that could be added, but would require joining to ts.ntl_current: marital status, registered party affiliation, household net worth, voting history, education level, occupation, donations to organizations, urbanicity (?)
 ---- Keep in mind: vb_ fields are given by people directly, ts_tsmart_ are models.
 
@@ -12,7 +11,6 @@ SELECT
 	coc_identities.person_id AS person_id
   , coc_member_profile.vb_voterbase_id AS voterbase_id
   , coc_member_profile.vb_smartvan_id AS smartvan_id
-  		-- ?? ^Some nulls in final table. Do I need to include?
   , coc_member_profile.vb_tsmart_state AS state
   , coc_member_profile.vb_tsmart_zip AS zipcode
   , coc_member_profile.vb_tsmart_first_name AS first_name
@@ -20,7 +18,7 @@ SELECT
  	, coc_member_profile.vb_voterbase_age AS age
   , coc_member_profile.gender AS gender
   , coc_member_profile.race AS race
-  		-- !! ^To improve, refer to race models in ts.ntl_current. Select race with highest/lowest (?) score?
+  		-- Best field for iding race. Uses self-reported race where possible, then consumer data.
   , coc_person_fields.vendor
   , coc_person_fields.primary_key AS ea_id
   		-- ^Include to join to Every Action.
@@ -36,14 +34,14 @@ INNER JOIN tmc_activist_pool.coc_member_profile
 LEFT JOIN tmc_activist_pool.coc_person_fields
 	ON coc_identities.person_id = coc_person_fields.person_id
 
-WHERE vb_voterbase_deceased_flag IS NULL
-  AND coc_person_fields.vendor = 'every_action'
+WHERE coc_person_fields.vendor = 'every_action'
   	-- !! ^Filter to only include Every Action. Maybe should also include Mobilize, since syncing from Mob to EA is not always consistent. But is a lot easier to only join to EA.
   AND vb_tsmart_state = 'CA'
   	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
 ),
 
 
+-- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields
 deduping1 AS (
 SELECT *
   , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY updated_at DESC) AS person_dupe
@@ -72,8 +70,7 @@ SELECT
   , gender
   , race
   , ea_id
-  , coc_eventsignups.datetimeoffsetbegin
-  		-- ^Include for deduping
+  
 FROM dedup1
 
 -- Joining to contacts, event sign ups, and events in Every Action.
@@ -96,13 +93,6 @@ WHERE
     -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
   AND coc_events.eventname NOT LIKE '%Cancelled%'
     -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
-),
-
-
-deduping2 AS (
-SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY datetimeoffsetbegin DESC) AS eventsignup_dupe
-FROM ea_join
 )
 
 
@@ -118,8 +108,7 @@ SELECT
  	, age
   , gender
   , race
-FROM deduping2
-WHERE eventsignup_dupe = 1
+FROM ea_join
 
 ;
 
