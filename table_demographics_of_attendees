@@ -2,6 +2,9 @@
 -- Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an event since Sept 2020, and include fields like event owner and event type.
 
 
+DROP TABLE IF EXISTS coc_reporting.vf_attendee_demographics;
+CREATE TABLE coc_reporting.vf_attendee_demographics AS
+
 
 WITH base AS (
 SELECT
@@ -130,6 +133,7 @@ SELECT
   , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
   	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
   , ntl_current.tmc_white_antiblack_resentment AS white_antiblack_resentment
+  	-- ^Higher scores corresponding to higher likelihood of resentment among white people
   , ntl_current.ts_tsmart_cannabis_legal_support_score AS cannabis_legal_support_score
   	-- ^A higher score indicates a higher likelihood that person supports the legalization of cannabis.
   , ntl_current.vb_purely_social_networker_demi_decile
@@ -183,3 +187,8 @@ INNER JOIN ea_mob_table
 
 -- 15,057,338 unique person ids in coc_identities
 ---- 5,730,569 unique voterbase ids in coc_member_profile (coc members that match to voter file)
+
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
+GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
