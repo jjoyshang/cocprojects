@@ -1,5 +1,5 @@
--- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include those who have attended one event or more since Sept 2020. *
--- Joining to event and participation id in Every Action and Mobilize to be able to filter by event owner, event type etc.
+-- * Display demographic information on our engaged members, by joining to information from the voterfile. Demographic info includes age, gender, race, education level, household income, urbanicity etc. *
+-- Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an event since Sept 2020, and include fields like event owner and event type.
 
 
 
@@ -135,12 +135,11 @@ INNER JOIN ts.ntl_current
 ),
 
 
+-- Table if event and attendance information from Every Action and Mobilize:
 ea_mob_table AS (
 -- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
 -- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
-  
 SELECT
--- event and attendance information from EA and Mob:
   NVL (ea_eventid::varchar, mob_shiftid) AS event_id
   , NVL (ea_date, mob_date::varchar) AS event_date
   , NVL (ea_eventname, mob_eventname) AS event_name
