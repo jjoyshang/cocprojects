@@ -1,9 +1,6 @@
--- NEXT join to ts.ntl_current, also Mobilize
-
 -- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include those who have attended one event or more since Sept 2020. *
----- Only joining to attendance data in Every Action currently.
----- Some fields that could be added, but would require joining to ts.ntl_current: marital status, registered party affiliation, household net worth, voting history, education level, occupation, donations to organizations, urbanicity (?)
----- Keep in mind: vb_ fields are given by people directly, ts_tsmart_ are models.
+-- Joining to event and participation id in Every Action and Mobilize to be able to filter by event owner, event type etc.
+
 
 
 WITH base AS (
@@ -13,32 +10,31 @@ SELECT
   , coc_member_profile.vb_smartvan_id AS smartvan_id
   , coc_member_profile.vb_tsmart_first_name AS first_name
   , coc_member_profile.vb_tsmart_last_name AS last_name
-  , coc_person_fields.vendor
-  , coc_person_fields.primary_key AS ea_id
-  		-- ^Include to join to Every Action.
+  , coc_person_fields.vendor AS vendor
+  , coc_person_fields.primary_key AS primary_key
+  		-- ^Include to join to Every Action and Mobilize
   , coc_person_fields.updated_at
 
 -- Start with coc_identities as base, since other tables in tmc_activist_pool refer back to it.
 FROM tmc_activist_pool.coc_identities
 
--- coc_member_profile table is join to the voterfile
+-- coc_member_profile table is join to the voterfile. Inner join since we only want members included in the voter file.
 INNER JOIN tmc_activist_pool.coc_member_profile
 	ON coc_member_profile.matchbackid = coc_identities.person_id
--- coc_person_fields table is join to records in different platforms
-LEFT JOIN tmc_activist_pool.coc_person_fields
+-- coc_person_fields table is join to records in different platforms. Inner join since we only want members who have records in Every Action and/or Mobilize.
+INNER JOIN tmc_activist_pool.coc_person_fields
 	ON coc_identities.person_id = coc_person_fields.person_id
 
-WHERE coc_person_fields.vendor = 'every_action'
-  	-- !! ^Filter to only include Every Action. Maybe should also include Mobilize, since syncing from Mob to EA is not always consistent. But is a lot easier to only join to EA.
-  AND coc_member_profile.vb_tsmart_state = 'CA'
+WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
+  --AND coc_member_profile.vb_tsmart_state = 'CA'
   	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
 ),
 
 
--- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields
+-- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields, but keeping multiple records of one person if they are in both Every Action and Mobilize.
 deduping1 AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY updated_at DESC) AS person_dupe
+  , ROW_NUMBER () OVER (PARTITION BY person_id, vendor ORDER BY updated_at DESC) AS person_dupe
 FROM base
 ),
 
@@ -57,7 +53,7 @@ SELECT
   person_id
   , voterbase_id
   , smartvan_id
-  , ea_id
+  , primary_key
   , first_name
   , last_name
 -- Fields from the voter file:
@@ -79,8 +75,7 @@ SELECT
        	ELSE ntl_current.vb_family_composition_code 
     	END AS family_composition
   , ntl_current.vb_homeowner_indicator AS homeowner_indicator
-  , ntl_current.vb_household_income_amount AS household_income
-  		-- Results by $1000
+  , ( '$'|| ntl_current.vb_household_income_amount || ',000' ) AS household_income
   , CASE
       	WHEN ntl_current.vb_household_net_worth = 'A' THEN '< $25,000'
       	WHEN ntl_current.vb_household_net_worth = 'B' THEN '$25,000 - $49,999'
@@ -134,21 +129,42 @@ SELECT
       
 FROM dedup1
 
-LEFT JOIN ts.ntl_current
+-- Inner join since we only want members included in the voter file.
+INNER JOIN ts.ntl_current
  	ON ntl_current.vb_voterbase_id = dedup1.voterbase_id
 ),
 
 
---ea_join AS (
--- This select to filter persons in memberbase who have attended an event in Every Action since Sept 2020.
+ea_mob_table AS (
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+  
+SELECT
+-- event and attendance information from EA and Mob:
+  NVL (ea_eventid::varchar, mob_shiftid) AS event_id
+  , NVL (ea_date, mob_date::varchar) AS event_date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+	, NVL (ea_eventstate, mob_eventstate) AS event_state
+  , mob_eventowner AS event_owner
+  , NVL (ea_attendeesid, mob_userid) AS attendee_id
+  , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
+FROM coc_reporting.ea_eventattendance
+
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+)
+
+
 SELECT 
-	*
+  *
 FROM vf_join
 
--- Base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
-LEFT JOIN coc_reporting.ea_eventattendance
-  ON ea_eventattendance.ea_attendeesid = vf_join.ea_id
---),
+-- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
+INNER JOIN ea_mob_table
+  ON ea_mob_table.attendee_id = vf_join.primary_key
 
 ;
 
