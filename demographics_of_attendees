@@ -74,6 +74,7 @@ SELECT
         WHEN ntl_current.vb_family_composition_code = 'G' THEN 'Other'
        	ELSE ntl_current.vb_family_composition_code 
     	END AS family_composition
+  , ntl_current.vb_number_of_children_in_household AS number_children
   , ntl_current.vb_homeowner_indicator AS homeowner_indicator
   , ( '$'|| ntl_current.vb_household_income_amount || ',000' ) AS household_income
   , CASE
@@ -103,7 +104,7 @@ SELECT
        	ELSE ntl_current.vb_education::varchar
     	END AS highest_education
   , CASE
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN 'Rural 1 (leaste dense)'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN 'Rural 1 (least dense)'
       	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN 'Rural 2'
       	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN 'Suburban 3'
       	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN 'Suburban 4'
@@ -126,6 +127,17 @@ SELECT
 	--, ntl_current.ts_tsmart_jewish_raw_score
 	--, ntl_current.ts_tsmart_mormon_raw_score
 	--, ntl_current.ts_tsmart_non_religious_raw_score
+  , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
+  	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
+  , ntl_current.tmc_white_antiblack_resentment AS white_antiblack_resentment
+  , ntl_current.ts_tsmart_cannabis_legal_support_score AS cannabis_legal_support_score
+  	-- ^A higher score indicates a higher likelihood that person supports the legalization of cannabis.
+  , ntl_current.vb_purely_social_networker_demi_decile
+  	-- ^Such as Facebook. 1 represents those most likely and 20 represents those least likely.
+  , ntl_current.vb_personal_voice_social_networker_demi_decile
+  	-- ^Such as Twitter. 1 represents those most likely and 20 represents those least likely.
+  , ntl_current.vb_professional_social_networker_demi_decile
+  	-- ^Such as LinkedIn. 1 represents those most likely and 20 represents those least likely.
       
 FROM dedup1
 
@@ -135,7 +147,8 @@ INNER JOIN ts.ntl_current
 ),
 
 
--- Table if event and attendance information from Every Action and Mobilize:
+-- Table of event and attendance information from Every Action and Mobilize:
+---- These tables are already filtering for participations with role = 'attendee', participation = 'completed', event date since Sept 2020 , event not cancelled.
 ea_mob_table AS (
 -- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
 -- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
