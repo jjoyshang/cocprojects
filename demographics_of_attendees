@@ -1,6 +1,6 @@
 -- NEXT join to ts.ntl_current, also Mobilize
 
--- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include this who have attended one event or more since Sept 2020. *
+-- * Display demographic information on our engaged members, by joining to information from the voterfile. Start with age, gender, and race (with more to be added in the future). Engaged members will include those who have attended one event or more since Sept 2020. *
 ---- Only joining to attendance data in Every Action currently.
 ---- Some fields that could be added, but would require joining to ts.ntl_current: marital status, registered party affiliation, household net worth, voting history, education level, occupation, donations to organizations, urbanicity (?)
 ---- Keep in mind: vb_ fields are given by people directly, ts_tsmart_ are models.
@@ -11,14 +11,8 @@ SELECT
 	coc_identities.person_id AS person_id
   , coc_member_profile.vb_voterbase_id AS voterbase_id
   , coc_member_profile.vb_smartvan_id AS smartvan_id
-  , coc_member_profile.vb_tsmart_state AS state
-  , coc_member_profile.vb_tsmart_zip AS zipcode
   , coc_member_profile.vb_tsmart_first_name AS first_name
   , coc_member_profile.vb_tsmart_last_name AS last_name
- 	, coc_member_profile.vb_voterbase_age AS age
-  , coc_member_profile.gender AS gender
-  , coc_member_profile.race AS race
-  		-- Best field for iding race. Uses self-reported race where possible, then consumer data.
   , coc_person_fields.vendor
   , coc_person_fields.primary_key AS ea_id
   		-- ^Include to join to Every Action.
@@ -36,7 +30,7 @@ LEFT JOIN tmc_activist_pool.coc_person_fields
 
 WHERE coc_person_fields.vendor = 'every_action'
   	-- !! ^Filter to only include Every Action. Maybe should also include Mobilize, since syncing from Mob to EA is not always consistent. But is a lot easier to only join to EA.
-  AND vb_tsmart_state = 'CA'
+  AND coc_member_profile.vb_tsmart_state = 'CA'
   	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
 ),
 
@@ -53,62 +47,97 @@ dedup1 AS (
 SELECT *
 FROM deduping1
 WHERE person_dupe = 1
-),
+)
+--,
 
-
-ea_join AS (
--- This select to filter persons in memberbase who have attended an event in Every Action since Sept 2020.
-SELECT 
-	person_id
+-- Join to the voter file
+--vf_join AS (
+SELECT
+-- Fields from tmc_activist_pool:
+  person_id
   , voterbase_id
   , smartvan_id
-  , state
-  , zipcode
+  , ea_id
   , first_name
   , last_name
- 	, age
-  , gender
-  , race
-  , ea_id
-  
+-- Fields from the voter file:
+  , ntl_current.vb_tsmart_state AS state
+  , ntl_current.vb_tsmart_zip AS zip
+  , ntl_current.vb_voterbase_age AS age
+	, ntl_current.vb_voterbase_gender AS gender
+	, ntl_current.vb_voterbase_race AS race
+	, ntl_current.vb_voterbase_marital_status AS marital_status
+  , ntl_current.vb_vf_party AS political_party
+  , CASE
+      	WHEN ntl_current.vb_family_composition_code = 'A' THEN 'Single'
+      	WHEN ntl_current.vb_family_composition_code = 'B' THEN 'Single with children'
+      	WHEN ntl_current.vb_family_composition_code = 'C' THEN 'Couple'
+      	WHEN ntl_current.vb_family_composition_code = 'D' THEN 'Couple with children'
+      	WHEN ntl_current.vb_family_composition_code = 'E' THEN 'Multiple generations'
+       	WHEN ntl_current.vb_family_composition_code = 'F' THEN 'More than 3 surnames'
+        WHEN ntl_current.vb_family_composition_code = 'G' THEN 'Other'
+       	ELSE ntl_current.vb_family_composition_code 
+    	END AS family_composition
+  , ntl_current.vb_homeowner_indicator AS homeowner_indicator
+  , ntl_current.vb_household_income_amount AS household_income
+  		-- Results by $1000
+  , CASE
+      	WHEN ntl_current.vb_household_net_worth = 'A' THEN '< $25,000'
+      	WHEN ntl_current.vb_household_net_worth = 'B' THEN '$25,000 - $49,999'
+      	WHEN ntl_current.vb_household_net_worth = 'C' THEN '$50,000 - $74,999'
+      	WHEN ntl_current.vb_household_net_worth = 'D' THEN '$75,000 - $99,999'
+      	WHEN ntl_current.vb_household_net_worth = 'E' THEN '$100,000 - $149,999'
+       	WHEN ntl_current.vb_household_net_worth = 'F' THEN '$150,000 - $199,999'
+        WHEN ntl_current.vb_household_net_worth = 'G' THEN '$200,000 - $249,999'
+       	WHEN ntl_current.vb_household_net_worth = 'H' THEN '$250,000 - $499,999'
+        WHEN ntl_current.vb_household_net_worth = 'I' THEN '$500,000 - $749,999'
+        WHEN ntl_current.vb_household_net_worth = 'J' THEN '$750,000 - $999,999'
+        WHEN ntl_current.vb_household_net_worth = 'K' THEN '$1,000,000 - $2,499,999'
+        WHEN ntl_current.vb_household_net_worth = 'L' THEN '$2,500,000 - $4,999,999'
+        WHEN ntl_current.vb_household_net_worth = 'M' THEN '$5,000,000 - $9,999,999'
+        WHEN ntl_current.vb_household_net_worth = 'N' THEN '> $10,000,000'
+       	ELSE ntl_current.vb_household_net_worth
+    	END AS household_net_worth
+  , CASE
+      	WHEN ntl_current.vb_education = '0' THEN 'Unknown'::varchar
+      	WHEN ntl_current.vb_education = '1' THEN 'High School'::varchar
+      	WHEN ntl_current.vb_education = '2' THEN 'Some College'::varchar
+      	WHEN ntl_current.vb_education = '3' THEN 'College Graduate'::varchar
+      	WHEN ntl_current.vb_education = '4' THEN 'Post Graduate'::varchar
+        WHEN ntl_current.vb_education = '6' THEN 'Less than High School Diploma'::varchar
+       	ELSE ntl_current.vb_education::varchar
+    	END AS highest_education
+	, ntl_current.ts_tsmart_partisan_score
+  	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
+	, ntl_current.ts_tsmart_presidential_general_turnout_score
+  	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
+  , ntl_current.ts_tsmart_activist_score
+  	-- ^A higher score predicts a higher likelihood that the individual is an activist.
+	, ntl_current.ts_tsmart_ideology_score
+	--, ntl_current.ts_tsmart_catholic_raw_score
+  	-- ^A higher score indicates a higher likelihood to identify as Catholic.
+	--, ntl_current.ts_tsmart_evangelical_raw_score
+  	-- ^A higher score indicates a higher likelihood to identify as Evangelical.
+	--, ntl_current.ts_tsmart_otherchristian_raw_score
+	--, ntl_current.ts_tsmart_nonchristian_raw_score
+	--, ntl_current.ts_tsmart_jewish_raw_score
+	--, ntl_current.ts_tsmart_mormon_raw_score
+	--, ntl_current.ts_tsmart_non_religious_raw_score
+  , CASE
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN 'Rural 1 (leaste dense)'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN 'Rural 2'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN 'Suburban 3'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN 'Suburban 4'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN 'Urban 5'
+        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN 'Urban 6 (most dense)'
+       	ELSE ntl_current.ts_tsmart_urbanicity
+    	END AS urbanicity
+      
 FROM dedup1
 
--- Joining to contacts, event sign ups, and events in Every Action.
-LEFT JOIN tmc_van.coc_contacts_mym
-	ON coc_contacts_mym.vanid = dedup1.ea_id
-LEFT JOIN tmc_van.coc_eventsignups
-	ON coc_eventsignups.vanid = coc_contacts_mym.vanid
-LEFT JOIN tmc_van.coc_eventsignupsstatuses
- 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
--- Joining events table to be able to filter for event date and name.
-LEFT JOIN tmc_van.coc_events
-	ON coc_events.eventid = coc_eventsignups.eventid
-
-WHERE
-	coc_eventsignups.eventrolename = 'Attendee'
-    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
-  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
-    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
-  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
-    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
-  AND coc_events.eventname NOT LIKE '%Cancelled%'
-    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
-)
-
-
-SELECT
-		person_id
-  , voterbase_id
-  , smartvan_id
-  , ea_id
-  , first_name
-  , last_name
-  , state
-  , zipcode
- 	, age
-  , gender
-  , race
-FROM ea_join
+LEFT JOIN ts.ntl_current
+ 	ON ntl_current.vb_voterbase_id = dedup1.voterbase_id
+--),
 
 ;
 
