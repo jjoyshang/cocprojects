@@ -1,0 +1,89 @@
+-- * Create a table that lists the people who have attended an event for allies since Sept 2020. Use to filter larger tables that includes attendees to all events, in order to compare the differences in our volunteer base with and without allies. *
+-- Currently joins with the person_id field from tmc_activist_pool.coc_identities
+
+
+DROP TABLE IF EXISTS coc_reporting.allies_events_attendees;
+CREATE TABLE coc_reporting.allies_events_attendees AS
+
+WITH base AS (
+SELECT
+	coc_identities.person_id AS person_id
+  , coc_member_profile.vb_voterbase_id AS voterbase_id
+  , coc_member_profile.vb_smartvan_id AS smartvan_id
+  , coc_member_profile.vb_tsmart_first_name AS first_name
+  , coc_member_profile.vb_tsmart_last_name AS last_name
+  , coc_person_fields.vendor AS vendor
+  , coc_person_fields.primary_key AS primary_key
+  		-- ^Include to join to Every Action and Mobilize
+  , coc_person_fields.updated_at
+
+-- Start with coc_identities as base, since other tables in tmc_activist_pool refer back to it.
+FROM tmc_activist_pool.coc_identities
+
+-- coc_member_profile table is join to the voterfile. Inner join since we only want members included in the voter file.
+INNER JOIN tmc_activist_pool.coc_member_profile
+	ON coc_member_profile.matchbackid = coc_identities.person_id
+-- coc_person_fields table is join to records in different platforms. Inner join since we only want members who have records in Every Action and/or Mobilize.
+INNER JOIN tmc_activist_pool.coc_person_fields
+	ON coc_identities.person_id = coc_person_fields.person_id
+
+WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
+  --AND coc_member_profile.vb_tsmart_state = 'CA'
+  	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
+),
+
+
+-- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields, but keeping multiple records of one person if they are in both Every Action and Mobilize.
+deduping1 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY person_id, vendor ORDER BY updated_at DESC) AS person_dupe
+FROM base
+),
+
+
+dedup1 AS (
+SELECT *
+FROM deduping1
+WHERE person_dupe = 1
+)
+,
+
+
+-- Table of event and attendance information from Every Action and Mobilize:
+---- These tables are already filtering for participations with role = 'attendee', participation = 'completed', event date since Sept 2020 , event not cancelled.
+ea_mob_table AS (
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+SELECT
+  NVL (ea_eventid::varchar, mob_shiftid) AS event_id
+  , NVL (ea_date, mob_date::varchar) AS event_date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+  , mob_eventowner AS event_owner
+  , NVL (ea_attendeesid, mob_userid) AS attendee_id
+FROM coc_reporting.ea_eventattendance
+
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+)
+
+
+SELECT 
+  person_id
+  , CASE
+  		WHEN event_name LIKE '%_allies'THEN 't'
+      ELSE 'f'
+    END AS allies_event_attendee
+FROM dedup1
+
+-- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
+INNER JOIN ea_mob_table
+  ON ea_mob_table.attendee_id = dedup1.primary_key
+
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.allies_events_attendees TO GROUP coc;
+GRANT ALL ON coc_reporting.allies_events_attendees TO jharris1;
