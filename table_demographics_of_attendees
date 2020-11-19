@@ -127,56 +127,68 @@ SELECT
   , ntl_current.ts_tsmart_activist_score AS activist_score
   	-- ^A higher score predicts a higher likelihood that the individual is an activist.
   , CASE
-    	WHEN ts_tsmart_catholic_raw_score > ts_tsmart_evangelical_raw_score 
-        	AND ts_tsmart_catholic_raw_score > ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_catholic_raw_score > ts_tsmart_nonchristian_raw_score
-          AND ts_tsmart_catholic_raw_score > ts_tsmart_jewish_raw_score
-          AND ts_tsmart_catholic_raw_score > ts_tsmart_mormon_raw_score
-          AND ts_tsmart_catholic_raw_score > ts_tsmart_non_religious_raw_score
+    	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
+        	AND ts_tsmart_catholic_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Catholic'
-       WHEN ts_tsmart_evangelical_raw_score > ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_evangelical_raw_score > ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_evangelical_raw_score > ts_tsmart_nonchristian_raw_score
-          AND ts_tsmart_evangelical_raw_score > ts_tsmart_jewish_raw_score
-          AND ts_tsmart_evangelical_raw_score > ts_tsmart_mormon_raw_score
-          AND ts_tsmart_evangelical_raw_score > ts_tsmart_non_religious_raw_score
+          ELSE CASE
+       WHEN ts_tsmart_evangelical_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_evangelical_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Evangelical'
-       WHEN ts_tsmart_otherchristian_raw_score > ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_otherchristian_raw_score > ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_nonchristian_raw_score
-          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_jewish_raw_score
-          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_mormon_raw_score
-          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_non_religious_raw_score
+          ELSE CASE
+       WHEN ts_tsmart_otherchristian_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Other Christian'
-       WHEN ts_tsmart_nonchristian_raw_score > ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_nonchristian_raw_score > ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_jewish_raw_score
-          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_mormon_raw_score
-          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_non_religious_raw_score
+          ELSE CASE
+       WHEN ts_tsmart_nonchristian_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Non-Christian'
-       WHEN ts_tsmart_jewish_raw_score > ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_jewish_raw_score > ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_jewish_raw_score > ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_jewish_raw_score > ts_tsmart_nonchristian_raw_score
-          AND ts_tsmart_jewish_raw_score > ts_tsmart_mormon_raw_score
-          AND ts_tsmart_jewish_raw_score > ts_tsmart_non_religious_raw_score
+        ELSE CASE
+       WHEN ts_tsmart_jewish_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_jewish_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Jewish'
-       WHEN ts_tsmart_mormon_raw_score > ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_mormon_raw_score > ts_tsmart_evangelical_raw_score
-      		AND ts_tsmart_mormon_raw_score > ts_tsmart_otherchristian_raw_score
-      		AND ts_tsmart_mormon_raw_score > ts_tsmart_nonchristian_raw_score
-       		AND ts_tsmart_mormon_raw_score > ts_tsmart_jewish_raw_score
-      		AND ts_tsmart_mormon_raw_score > ts_tsmart_non_religious_raw_score
-       		THEN 'Mormon'
-       WHEN ts_tsmart_non_religious_raw_score > ts_tsmart_catholic_raw_score
-      	 	AND ts_tsmart_non_religious_raw_score > ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_non_religious_raw_score > ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_non_religious_raw_score > ts_tsmart_nonchristian_raw_score
-          AND ts_tsmart_non_religious_raw_score > ts_tsmart_jewish_raw_score
-          AND ts_tsmart_non_religious_raw_score > ts_tsmart_mormon_raw_score
+          ELSE CASE
+       WHEN ts_tsmart_mormon_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_evangelical_raw_score
+      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_otherchristian_raw_score
+      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_nonchristian_raw_score
+       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_jewish_raw_score
+      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Mormon'
+        ELSE CASE
+       WHEN ts_tsmart_non_religious_raw_score >= ts_tsmart_catholic_raw_score
+      	 	AND ts_tsmart_non_religious_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_mormon_raw_score
           THEN 'Non-Religious'
-        ELSE NULL
+        ELSE 'Unknown'
+        END
+        END
+        END
+        END
+        END
+        END
      END AS religion_highest_score
   , CASE
   			WHEN religion_highest_score = 'Catholic' THEN ts_tsmart_catholic_raw_score
@@ -186,7 +198,7 @@ SELECT
         WHEN religion_highest_score = 'Jewish' THEN ts_tsmart_jewish_raw_score
         WHEN religion_highest_score = 'Mormon' THEN ts_tsmart_mormon_raw_score
         WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
-     	 ELSE NULL 
+     	 ELSE NULL
 		 END AS religion_score_number
   , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
   	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
@@ -239,6 +251,10 @@ FROM vf_join
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
 INNER JOIN ea_mob_table
   ON ea_mob_table.attendee_id = vf_join.primary_key
+-- Joining to table that indicates whether a person has ever attended an Allies event.
+-- https://platform.civisanalytics.com/spa/#/scripts/sql/101805527
+LEFT JOIN coc_reporting.allies_events_attendees
+	ON vf_join.person_id = allies_events_attendees.person_id_allies
 
 ;
 
