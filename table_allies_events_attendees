@@ -61,26 +61,42 @@ SELECT
   , NVL (ea_eventtype, mob_eventtype) AS event_type
   , mob_eventowner AS event_owner
   , NVL (ea_attendeesid, mob_userid) AS attendee_id
+
 FROM coc_reporting.ea_eventattendance
 
 FULL OUTER JOIN coc_reporting.mob_eventattendance
 	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
   AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
   -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
-)
+),
 
 
+join_events_people AS (
 SELECT 
   person_id
   , CASE
-  		WHEN event_name LIKE '%_allies'THEN 't'
-      ELSE 'f'
+  		WHEN event_name LIKE '%_allies'THEN 'Yes'
+      ELSE 'No'
     END AS allies_event_attendee
 FROM dedup1
 
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
 INNER JOIN ea_mob_table
   ON ea_mob_table.attendee_id = dedup1.primary_key
+),
+
+
+-- Deduping to only pull one record for each person, ordering by an event where Yes they attended an allies event.
+deduping2 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY allies_event_attendee ASC) AS event_dupe
+FROM join_events_people
+)
+
+
+SELECT *
+FROM deduping2
+WHERE event_dupe = 1
 
 ;
 
