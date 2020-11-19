@@ -126,15 +126,68 @@ SELECT
   	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
   , ntl_current.ts_tsmart_activist_score AS activist_score
   	-- ^A higher score predicts a higher likelihood that the individual is an activist.
-	--, ntl_current.ts_tsmart_catholic_raw_score
-  	-- ^A higher score indicates a higher likelihood to identify as Catholic.
-	--, ntl_current.ts_tsmart_evangelical_raw_score
-  	-- ^A higher score indicates a higher likelihood to identify as Evangelical.
-	--, ntl_current.ts_tsmart_otherchristian_raw_score
-	--, ntl_current.ts_tsmart_nonchristian_raw_score
-	--, ntl_current.ts_tsmart_jewish_raw_score
-	--, ntl_current.ts_tsmart_mormon_raw_score
-	--, ntl_current.ts_tsmart_non_religious_raw_score
+  , CASE
+    	WHEN ts_tsmart_catholic_raw_score > ts_tsmart_evangelical_raw_score 
+        	AND ts_tsmart_catholic_raw_score > ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_catholic_raw_score > ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_catholic_raw_score > ts_tsmart_jewish_raw_score
+          AND ts_tsmart_catholic_raw_score > ts_tsmart_mormon_raw_score
+          AND ts_tsmart_catholic_raw_score > ts_tsmart_non_religious_raw_score
+          THEN 'Catholic'
+       WHEN ts_tsmart_evangelical_raw_score > ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_evangelical_raw_score > ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_evangelical_raw_score > ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_evangelical_raw_score > ts_tsmart_jewish_raw_score
+          AND ts_tsmart_evangelical_raw_score > ts_tsmart_mormon_raw_score
+          AND ts_tsmart_evangelical_raw_score > ts_tsmart_non_religious_raw_score
+          THEN 'Evangelical'
+       WHEN ts_tsmart_otherchristian_raw_score > ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_otherchristian_raw_score > ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_jewish_raw_score
+          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_mormon_raw_score
+          AND ts_tsmart_otherchristian_raw_score > ts_tsmart_non_religious_raw_score
+          THEN 'Other Christian'
+       WHEN ts_tsmart_nonchristian_raw_score > ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_nonchristian_raw_score > ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_jewish_raw_score
+          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_mormon_raw_score
+          AND ts_tsmart_nonchristian_raw_score > ts_tsmart_non_religious_raw_score
+          THEN 'Non-Christian'
+       WHEN ts_tsmart_jewish_raw_score > ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_jewish_raw_score > ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_jewish_raw_score > ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_jewish_raw_score > ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_jewish_raw_score > ts_tsmart_mormon_raw_score
+          AND ts_tsmart_jewish_raw_score > ts_tsmart_non_religious_raw_score
+          THEN 'Jewish'
+       WHEN ts_tsmart_mormon_raw_score > ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_mormon_raw_score > ts_tsmart_evangelical_raw_score
+      		AND ts_tsmart_mormon_raw_score > ts_tsmart_otherchristian_raw_score
+      		AND ts_tsmart_mormon_raw_score > ts_tsmart_nonchristian_raw_score
+       		AND ts_tsmart_mormon_raw_score > ts_tsmart_jewish_raw_score
+      		AND ts_tsmart_mormon_raw_score > ts_tsmart_non_religious_raw_score
+       		THEN 'Mormon'
+       WHEN ts_tsmart_non_religious_raw_score > ts_tsmart_catholic_raw_score
+      	 	AND ts_tsmart_non_religious_raw_score > ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_non_religious_raw_score > ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_non_religious_raw_score > ts_tsmart_nonchristian_raw_score
+          AND ts_tsmart_non_religious_raw_score > ts_tsmart_jewish_raw_score
+          AND ts_tsmart_non_religious_raw_score > ts_tsmart_mormon_raw_score
+          THEN 'Non-Religious'
+        ELSE NULL
+     END AS religion_highest_score
+  , CASE
+  			WHEN religion_highest_score = 'Catholic' THEN ts_tsmart_catholic_raw_score
+        WHEN religion_highest_score = 'Evangelical' THEN ts_tsmart_evangelical_raw_score
+        WHEN religion_highest_score = 'Other Christian' THEN ts_tsmart_otherchristian_raw_score
+        WHEN religion_highest_score = 'Non-Christian' THEN ts_tsmart_nonchristian_raw_score
+        WHEN religion_highest_score = 'Jewish' THEN ts_tsmart_jewish_raw_score
+        WHEN religion_highest_score = 'Mormon' THEN ts_tsmart_mormon_raw_score
+        WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
+     	 ELSE NULL 
+		 END AS religion_score_number
   , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
   	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
   , ntl_current.tmc_white_antiblack_resentment AS white_antiblack_resentment
