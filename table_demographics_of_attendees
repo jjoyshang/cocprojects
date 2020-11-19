@@ -78,7 +78,12 @@ SELECT
        	ELSE ntl_current.vb_family_composition_code 
     	END AS family_composition
   , ntl_current.vb_number_of_children_in_household AS number_children
-  , ntl_current.vb_homeowner_indicator AS homeowner_indicator
+  , CASE
+      	WHEN ntl_current.vb_homeowner_indicator = 'Y' THEN 'Yes'
+      	WHEN ntl_current.vb_homeowner_indicator = 'N' THEN 'No'
+      	WHEN ntl_current.vb_homeowner_indicator = 'U' THEN 'Unknown'
+       	ELSE ntl_current.vb_homeowner_indicator 
+    	END AS homeowner_indicator
   , ( '$'|| ntl_current.vb_household_income_amount || ',000' ) AS household_income
   , CASE
       	WHEN ntl_current.vb_household_net_worth = 'A' THEN '< $25,000'
@@ -107,12 +112,12 @@ SELECT
        	ELSE ntl_current.vb_education::varchar
     	END AS highest_education
   , CASE
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN 'Rural 1 (least dense)'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN 'Rural 2'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN 'Suburban 3'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN 'Suburban 4'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN 'Urban 5'
-        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN 'Urban 6 (most dense)'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN '1 Rural (least dense)'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN '2 Rural'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN '3 Suburban'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN '4 Suburban'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN '5 Urban'
+        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN '6 Urban (most dense)'
        	ELSE ntl_current.ts_tsmart_urbanicity
     	END AS urbanicity
 	, ntl_current.ts_tsmart_partisan_score AS democratic_support_score
@@ -136,11 +141,11 @@ SELECT
   	-- ^Higher scores corresponding to higher likelihood of resentment among white people
   , ntl_current.ts_tsmart_cannabis_legal_support_score AS cannabis_legal_support_score
   	-- ^A higher score indicates a higher likelihood that person supports the legalization of cannabis.
-  , ntl_current.vb_purely_social_networker_demi_decile
+  , ntl_current.vb_purely_social_networker_demi_decile AS purely_social_network_score
   	-- ^Such as Facebook. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_personal_voice_social_networker_demi_decile
+  , ntl_current.vb_personal_voice_social_networker_demi_decile AS personal_voice_social_network_score
   	-- ^Such as Twitter. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_professional_social_networker_demi_decile
+  , ntl_current.vb_professional_social_networker_demi_decile AS professional_social_network_score
   	-- ^Such as LinkedIn. 1 represents those most likely and 20 represents those least likely.
       
 FROM dedup1
