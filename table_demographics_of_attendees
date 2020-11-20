@@ -2,8 +2,8 @@
 -- Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an event since Sept 2020, and include fields like event owner and event type.
 
 
---DROP TABLE IF EXISTS coc_reporting.vf_attendee_demographics;
---CREATE TABLE coc_reporting.vf_attendee_demographics AS
+DROP TABLE IF EXISTS coc_reporting.vf_attendee_demographics;
+CREATE TABLE coc_reporting.vf_attendee_demographics AS
 
 
 WITH base AS (
@@ -64,9 +64,7 @@ SELECT
   , ntl_current.vb_tsmart_zip AS zip
   , ntl_current.vb_voterbase_age AS age
 	, ntl_current.vb_voterbase_gender AS gender
-	, CASE WHEN ntl_current.vb_voterbase_race = 'Uncoded' THEN 'Unknown'
-  		ELSE ntl_current.vb_voterbase_race 
-  	END AS race
+	, ntl_current.vb_voterbase_race AS race
 	, ntl_current.vb_voterbase_marital_status AS marital_status
   , ntl_current.vb_vf_party AS political_party
   , CASE
@@ -86,7 +84,6 @@ SELECT
       	WHEN ntl_current.vb_homeowner_indicator = 'U' THEN 'Unknown'
        	ELSE ntl_current.vb_homeowner_indicator 
     	END AS homeowner_indicator
-  --, ( '$'|| ntl_current.vb_household_income_amount || ',000' ) AS household_income
   , CASE
   			WHEN ntl_current.vb_household_income_amount < 25 THEN '< $25,000'::varchar
   			WHEN ntl_current.vb_household_income_amount >= 25 AND ntl_current.vb_household_income_amount < 50 THEN '$25,000 - $49,999'::varchar
@@ -260,52 +257,11 @@ FULL OUTER JOIN coc_reporting.mob_eventattendance
 	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
   AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
   -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
-),
-
-
--- This CTE to assign a region to event owners who are in the field team. Use in final Select to assign event region.
-event_owner_region AS (
-SELECT 
-  event_owner
-  , CASE 
-    	WHEN event_owner = 'Parker, Cameron' THEN 'Midwest'
-        WHEN event_owner = 'Harding, Audrey' THEN 'Midwest'
-        WHEN event_owner = 'Haddad, Jonathan' THEN 'Midwest'
-        WHEN event_owner = 'Tesfalem, Alisha' THEN 'Midwest'
-        WHEN event_owner = 'Haji-Hassan, Hawa' THEN 'Midwest'
-        WHEN event_owner = 'Brown, Siera' THEN 'Northeast'
-        WHEN event_owner = 'Williams, Nantasha' THEN 'Northeast'
-        WHEN event_owner = 'Stark, Brianna' THEN 'Northeast'
-        WHEN event_owner = 'Starks, Brianna' THEN 'Northeast'
-        WHEN event_owner = 'Dingle, Sherill' THEN 'Northeast'
-        WHEN event_owner = 'Muhammad, Salaah' THEN 'Northeast'
-        WHEN event_owner = 'Stanard, Shereece' THEN 'Northeast'
-        WHEN event_owner = 'Malone, Qiana' THEN 'Southeast'
-        WHEN event_owner = 'Akinola-Massaquoi, Lauree' THEN 'Southeast'
-        WHEN event_owner = 'Akinola-Massaquoi, Laureé' THEN 'Southeast'
-        WHEN event_owner = 'Talley, Jasmine' THEN 'Southeast'
-        WHEN event_owner = 'Ceard, Michidael' THEN 'Southeast'
-        WHEN event_owner = 'Cobb, Jaymie' THEN 'Southeast'
-        WHEN event_owner = 'Quarles, Derrick' THEN 'Southeast'
-        WHEN event_owner = 'Hardy - Allen, Ebony' THEN 'Southeast'
-        WHEN event_owner = 'Inpower, Chuniq' THEN 'Southeast'
-        WHEN event_owner = 'Patton, Hillerie' THEN 'West'
-        WHEN event_owner = 'Newell, Destanie' THEN 'West'
-        WHEN event_owner = 'Dantzler, Kaya' THEN 'West'
-        WHEN event_owner = 'Murphy, Bill' THEN 'West'
-        WHEN event_owner = 'King, Daniesha' THEN 'West'
-        WHEN event_owner = 'Greer, Cameron' THEN 'West'
-     ELSE 'Unknown'
-  	END AS mob_eventregion_byowner
-FROM ea_mob_table
 )
 
 
 SELECT 
-	vf_join.*
-  , ea_mob_table.*
-  , NVL (pac_2020_state_region.region, event_owner_region.mob_eventregion_byowner) AS event_region
-  , allies_events_attendees.allies_event_attendee
+  *
 FROM vf_join
 
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
@@ -315,11 +271,6 @@ INNER JOIN ea_mob_table
 -- https://platform.civisanalytics.com/spa/#/scripts/sql/101805527
 LEFT JOIN coc_reporting.allies_events_attendees
 	ON vf_join.person_id = allies_events_attendees.person_id_allies
-LEFT JOIN coc_reporting.pac_2020_state_region
-	ON ea_mob_table.event_state = pac_2020_state_region.state
-INNER JOIN event_owner_region
-	ON event_owner_region.event_owner = ea_mob_table.event_owner
-
 
 ;
 
@@ -329,5 +280,5 @@ INNER JOIN event_owner_region
 
 
 -- Grant access:
---GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
---GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
+GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
+GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
