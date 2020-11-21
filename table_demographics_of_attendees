@@ -261,7 +261,10 @@ FULL OUTER JOIN coc_reporting.mob_eventattendance
 
 
 SELECT 
-  *
+  vf_join.*
+  , ea_mob_table.*
+  , NVL (pac_2020_state_region.region, rfm_regions.eventregion_byowner) AS event_region
+  , allies_events_attendees.allies_event_attendee
 FROM vf_join
 
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
@@ -271,7 +274,13 @@ INNER JOIN ea_mob_table
 -- https://platform.civisanalytics.com/spa/#/scripts/sql/101805527
 LEFT JOIN coc_reporting.allies_events_attendees
 	ON vf_join.person_id = allies_events_attendees.person_id_allies
-
+-- Joining to table that names region for event owners who are field managers.
+-- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
+LEFT JOIN coc_reporting.rfm_regions
+  ON ea_mob_table.event_owner = rfm_regions.mob_eventowner
+LEFT JOIN coc_reporting.pac_2020_state_region
+  ON pac_2020_state_region.state = ea_mob_table.event_state
+         
 ;
 
 
