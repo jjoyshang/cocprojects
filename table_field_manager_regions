@@ -1,0 +1,49 @@
+-- * Connect Field Managers in Mobilize to their regions. Use as a filter in other queries. *
+-- Basebase table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+
+
+DROP TABLE IF EXISTS coc_reporting.rfm_regions;
+CREATE TABLE coc_reporting.rfm_regions AS
+
+SELECT DISTINCT 
+  mob_eventowner
+  , CASE 
+    	WHEN mob_eventowner = 'Parker, Cameron' THEN 'Midwest'
+        WHEN mob_eventowner = 'Harding, Audrey' THEN 'Midwest'
+        WHEN mob_eventowner = 'Haddad, Jonathan' THEN 'Midwest'
+        WHEN mob_eventowner = 'Tesfalem, Alisha' THEN 'Midwest'
+        WHEN mob_eventowner = 'Haji-Hassan, Hawa' THEN 'Midwest'
+        WHEN mob_eventowner = 'Fortin, Candace' THEN 'Midwest'
+        WHEN mob_eventowner = 'Brown, Siera' THEN 'Northeast'
+        WHEN mob_eventowner = 'Williams, Nantasha' THEN 'Northeast'
+        WHEN mob_eventowner = 'Stark, Brianna' THEN 'Northeast'
+        WHEN mob_eventowner = 'Starks, Brianna' THEN 'Northeast'
+        WHEN mob_eventowner = 'Dingle, Sherill' THEN 'Northeast'
+        WHEN mob_eventowner = 'Muhammad, Salaah' THEN 'Northeast'
+        WHEN mob_eventowner = 'Stanard, Shereece' THEN 'Northeast'
+        WHEN mob_eventowner = 'Sanders, Dominique' THEN 'Northeast'
+        WHEN mob_eventowner = 'Malone, Quiana' THEN 'Southeast'
+        WHEN mob_eventowner = 'Akinola-Massaquoi, Lauree' THEN 'Southeast'
+        WHEN mob_eventowner = 'Akinola-Massaquoi, Laureé' THEN 'Southeast'
+        WHEN mob_eventowner = 'Talley, Jasmine' THEN 'Southeast'
+        WHEN mob_eventowner = 'Ceard, Michidael' THEN 'Southeast'
+        WHEN mob_eventowner = 'Cobb, Jaymie' THEN 'Southeast'
+        WHEN mob_eventowner = 'Quarles, Derrick' THEN 'Southeast'
+        WHEN mob_eventowner = 'Hardy - Allen, Ebony' THEN 'Southeast'
+        WHEN mob_eventowner = 'Inpower, Chuniq' THEN 'Southeast'
+         WHEN mob_eventowner = 'McKelvey, Daniel' THEN 'Southeast'
+        WHEN mob_eventowner = 'Patton, Hillerie' THEN 'West'
+        WHEN mob_eventowner = 'Newell, Destanie' THEN 'West'
+        WHEN mob_eventowner = 'Dantzler, Kaya' THEN 'West'
+        WHEN mob_eventowner = 'Murphy, Bill' THEN 'West'
+        WHEN mob_eventowner = 'King, Daniesha' THEN 'West'
+        WHEN mob_eventowner = 'Greer, Cameron' THEN 'West'
+        WHEN mob_eventowner = 'Petty, Corina' THEN 'West'
+     ELSE 'Unknown'
+  	END AS eventregion_byowner
+FROM coc_reporting.mob_eventattendance
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.rfm_regions TO GROUP coc;
+GRANT ALL ON coc_reporting.rfm_regions TO jharris1;
