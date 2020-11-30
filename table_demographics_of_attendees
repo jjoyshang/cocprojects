@@ -136,10 +136,15 @@ SELECT
         WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN '6 Urban (most dense)'
        	ELSE ntl_current.ts_tsmart_urbanicity
     	END AS urbanicity
-	, ntl_current.ts_tsmart_partisan_score AS democratic_support_score
-  	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
+  
 	, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
   	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
+  , ntl_current.ts_tsmart_partisan_score AS democratic_support_score
+  	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
+  , ntl_current.ts_tsmart_biden_support_score AS biden_support_score
+  	-- ^A higher score predicts a higher likelihood that a person will support Joe Biden in the 2020 general election.
+  , ntl_current.ts_tsmart_trump_defector_score AS trump_defector_score
+  	-- ^A higher score indicates a higher likelihood that a person was once, but no longer is, a supporter of President Trump. 
   , ntl_current.ts_tsmart_activist_score AS activist_score
   	-- ^A higher score predicts a higher likelihood that the individual is an activist.
   , CASE
@@ -216,12 +221,50 @@ SELECT
         WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
      	 ELSE NULL
 		 END AS religion_score_number
+   
+  , ntl_current.ts_tsmart_minimum_wage_score AS minimum_wage_score
+  	-- ^A higher score indicates a higher likelihood that a person supports raising the minimum wage to $15 or more
+  , ntl_current.ts_tsmart_working_class_score AS working_class_score
+  	-- ^A higher score indicates a higher likelihood that a person is working class, as opposed to professional or business class (and whose occupation does not require protective clothing).
+  , ntl_current.ts_tsmart_recession_sensitivity_score AS pandemic_financial_hardship_score
+  	-- ^A higher score indicates individuals who felt most at-risk of financial hardship during the onset of the COVID-19 outbreak.
+  
+  , ntl_current.ts_tsmart_veteran_score AS veteran_score
+  	-- ^A higher score indicates a higher likelihood that a person is a military veteran or an active service member.
   , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
   	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
   , ntl_current.tmc_white_antiblack_resentment AS white_antiblack_resentment
   	-- ^Higher scores corresponding to higher likelihood of resentment among white people
   , ntl_current.ts_tsmart_cannabis_legal_support_score AS cannabis_legal_support_score
   	-- ^A higher score indicates a higher likelihood that person supports the legalization of cannabis.
+  , ntl_current.ts_tsmart_prochoice_score AS prochoice_score
+  	-- ^A higher score indicates a higher likelihood to support abortion rights.
+  , ntl_current.predictwise_healthcare_women_score AS healthcare_women_score
+  	-- ^A higher score indicates a higher likelihood that a person supports women’s healthcare and reproductive rights, based on attitudes towards womens’ and girls’ healthcare, access to birth control without parental consent, comprehensive sexual education, and access to abortion in different circumstances.
+  	-- ^Predictwise score
+  , ntl_current.ts_tsmart_path_to_citizen_score AS path_to_citizen_score
+  	-- ^A higher score indicates a higher likelihood that a person supports a path to citizenship immigration law.
+  , ROUND (ntl_current.pathway_citizenship_score, 1) AS pathway_citizenship_score_2
+  	-- ^A higher score indicates a higher likelihood that a person supports a path to citizenship for undocumented immigrants.
+  , ROUND (ntl_current.abolish_ice_score, 1) AS abolish_ice_score
+  	-- ^A higher score indicates a higher likelihood that a person opposes the existence of ICE.
+  , ROUND (ntl_current.medicaid_access_score, 1) AS undocumented_medicaid_access_score
+  	-- ^A higher score indicates a higher likelihood that a person supports undocumented immigrants qualifying for Medicaid.
+  , ntl_current.ts_tsmart_college_funding_score AS college_funding_score
+  	-- ^A higher score indicates a higher likelihood that a person supports raising government spending on student aid to make college more affordable.
+  , ntl_current.ts_tsmart_climate_change_score AS climate_change_score
+  	-- ^A higher score indicates a higher likelihood that a person supports stricter laws and regulations to address climate change.
+  , ntl_current.predictwise_environmentalism_score AS environmentalism_score
+  	-- ^A higher score indicates a higher likelihood that a person supports protecting the environment, based on attitudes towards renewable energy, climate change, and oil and gas exploration.
+  	-- ^Predictwise score
+  , ntl_current.ts_tsmart_gun_control_score AS gun_control_score
+  	-- ^A higher score indicates a higher likelihood that a person supports stricter gun control laws
+  , ntl_current.ts_tsmart_gunowner_score AS gunowner_score
+  	-- ^A higher score indicates a higher likelihood that a person is a gunowner.
+  , ntl_current.predictwise_criminal_justice_reform_score AS criminal_justice_reform_score
+  	-- ^A higher score indicates a higher likelihood that a person is supportive of government efforts to address criminal justice.
+  	-- ^Predictwise score
+  
   , ntl_current.vb_purely_social_networker_demi_decile AS purely_social_network_score
   	-- ^Such as Facebook. 1 represents those most likely and 20 represents those least likely.
   , ntl_current.vb_personal_voice_social_networker_demi_decile AS personal_voice_social_network_score
@@ -282,13 +325,13 @@ LEFT JOIN coc_reporting.rfm_regions
 -- Joining to base table that names the region for each state.
 LEFT JOIN coc_reporting.pac_2020_state_region
   ON pac_2020_state_region.state = ea_mob_table.event_state
-         
+ 
+ 
 ;
 
 
 -- 15,057,338 unique person ids in coc_identities
 ---- 5,730,569 unique voterbase ids in coc_member_profile (coc members that match to voter file)
-
 
 -- Grant access:
 GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
