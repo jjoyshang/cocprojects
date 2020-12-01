@@ -61,6 +61,7 @@ SELECT
   , last_name
 -- Fields from the voter file:
   , ntl_current.vb_tsmart_state AS state
+  , ntl_current.vb_tsmart_city AS city
   , ntl_current.vb_tsmart_zip AS zip
   , ntl_current.vb_voterbase_age AS age
 	, ntl_current.vb_voterbase_gender AS gender
