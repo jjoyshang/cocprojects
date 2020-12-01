@@ -8,10 +8,11 @@ CREATE TABLE coc_reporting.allies_events_attendees AS
 WITH base AS (
 SELECT
 	coc_identities.person_id AS person_id
-  , coc_member_profile.vb_voterbase_id AS voterbase_id
-  , coc_member_profile.vb_smartvan_id AS smartvan_id
-  , coc_member_profile.vb_tsmart_first_name AS first_name
-  , coc_member_profile.vb_tsmart_last_name AS last_name
+  , coc_member_profile.voterbase_id AS voterbase_id
+  --, coc_member_profile.vb_smartvan_id AS smartvan_id
+  		-- ^Not seeing a smartvan in updated schema as of 12/01/2020
+  , coc_person_fields.first_name AS first_name
+  , coc_person_fields.last_name AS last_name
   , coc_person_fields.vendor AS vendor
   , coc_person_fields.primary_key AS primary_key
   		-- ^Include to join to Every Action and Mobilize
@@ -29,7 +30,7 @@ INNER JOIN tmc_activist_pool.coc_person_fields
 
 WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
   --AND coc_member_profile.vb_tsmart_state = 'CA'
-  	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
+  	-- ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
 ),
 
 
@@ -86,7 +87,7 @@ INNER JOIN ea_mob_table
 ),
 
 
--- Deduping to only pull one record for each person, ordering by an event where Yes they attended an allies event.
+-- Deduping to only pull one record for each person, ordering by an event where Yes they attended an allies event first (so if they attended any ally event, they will be Yes).
 deduping2 AS (
 SELECT *
   , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY allies_event_attendee ASC) AS event_dupe
@@ -94,7 +95,9 @@ FROM join_events_people
 )
 
 
-SELECT *
+SELECT 
+	person_id AS person_id_allies
+  , allies_event_attendee
 FROM deduping2
 WHERE event_dupe = 1
 
