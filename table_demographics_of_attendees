@@ -9,10 +9,11 @@ CREATE TABLE coc_reporting.vf_attendee_demographics AS
 WITH base AS (
 SELECT
 	coc_identities.person_id AS person_id
-  , coc_member_profile.vb_voterbase_id AS voterbase_id
-  , coc_member_profile.vb_smartvan_id AS smartvan_id
-  , coc_member_profile.vb_tsmart_first_name AS first_name
-  , coc_member_profile.vb_tsmart_last_name AS last_name
+  , coc_member_profile.voterbase_id AS voterbase_id
+  --, coc_member_profile.vb_smartvan_id AS smartvan_id
+  	-- ^Not seeing a smartvan in updated schema as of 12/01/2020
+  , coc_person_fields.first_name AS first_name
+  , coc_person_fields.last_name AS last_name
   , coc_person_fields.vendor AS vendor
   , coc_person_fields.primary_key AS primary_key
   		-- ^Include to join to Every Action and Mobilize
@@ -55,7 +56,6 @@ SELECT
 -- Fields from tmc_activist_pool:
   person_id
   , voterbase_id
-  , smartvan_id
   , primary_key
   , first_name
   , last_name
@@ -330,9 +330,6 @@ LEFT JOIN coc_reporting.pac_2020_state_region
  
 ;
 
-
--- 15,057,338 unique person ids in coc_identities
----- 5,730,569 unique voterbase ids in coc_member_profile (coc members that match to voter file)
 
 -- Grant access:
 GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
