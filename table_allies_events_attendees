@@ -1,12 +1,11 @@
 -- * Create a table that lists the people who have attended an event for allies since Sept 2020. Use to filter larger tables that includes attendees to all events, in order to compare the differences in our volunteer base with and without allies. *
--- Currently joins with the person_id field from tmc_activist_pool.coc_identities
+-- Connects to the person_id from tmc_activist pool, EA attendees id, and Mobilize user id. However, members may only have one or two of these ids.
+
+---- ATTENTION!! Mobilize has not been syncing to tmc_activist_pool.coc_person_fields since 7/15/20 (tested 12/01/20). Therefore, people just in Mobilize NOT EA have nothing to join to in tmc_activist_pool.
 
 
 DROP TABLE IF EXISTS coc_reporting.allies_events_attendees;
 CREATE TABLE coc_reporting.allies_events_attendees AS
-
-
----- ATTENTION!! Mobilize has not been syncung to tmc_activist_pool.coc_person_fields since 7/15/20 (tested 12/01/20). Therefore, people just in Mobilize NOT EA have nothing to join to in tmc_activist_pool.
 
 
 WITH ea_mob_table AS (
