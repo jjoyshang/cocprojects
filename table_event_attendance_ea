@@ -1,5 +1,4 @@
 -- * Create a table that pulls together relevant fields from EveryAction for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
--- Last updated 11/10/2020
 
 
 DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
@@ -23,6 +22,8 @@ SELECT
       , coc_locations.state As ea_eventstate 
         -- ^Included for filtering.
   	, coc_eventsignups.vanid AS ea_attendeesid
+  	, coc_contacts_mym.firstname AS ea_firstname
+  	, coc_contacts_mym.lastname AS ea_lastname
   	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
   	, coc_contactsaddresses_mym.datemodified AS zip_datemodified
   			-- ^Used to dedup
@@ -40,6 +41,8 @@ LEFT JOIN tmc_van.coc_locations
 	ON coc_locations.locationid = coc_eventslocations.locationid
 LEFT JOIN tmc_van.coc_contactsaddresses_mym
   ON coc_contactsaddresses_mym.vanid = coc_eventsignups.vanid
+LEFT JOIN tmc_van.coc_contacts_mym
+  ON coc_contactsaddresses_mym.vanid = coc_contacts_mym.vanid
 LEFT JOIN tmc_misc.zip_lat_long
   ON zip_lat_long.zip = coc_contactsaddresses_mym.zip5
 
@@ -71,6 +74,8 @@ SELECT
   	, ea_eventtype
     , ea_eventstate 
   	, ea_attendeesid
+    , ea_firstname
+    , ea_lastname
   	, ea_attendeeszip
   -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
     
