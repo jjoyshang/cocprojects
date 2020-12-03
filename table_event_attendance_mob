@@ -72,7 +72,10 @@ mob_base2 AS (
 SELECT
     *
     , participations.user_id AS mob_userid
+  	, participations.user__given_name AS mob_firstname
+  	, participations.user__family_name AS mob_lastname
   	, van_persons.van_id AS mob_vanuserid
+  			-- For joining users with Every Action
   	, participations.postal_code_at_signup AS mob_userzip
   			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
 
@@ -108,6 +111,8 @@ SELECT
     , mob_date
     , mob_eventowner
   	, mob_userid
+    , mob_firstname
+    , mob_lastname
     , mob_vanuserid
   	, mob_userzip
   -- ^Selecting only fields that I want in the final table. Leaving out for deduping.
