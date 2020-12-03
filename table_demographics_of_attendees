@@ -294,6 +294,8 @@ SELECT
 	, NVL (ea_eventstate, mob_eventstate) AS event_state
   , mob_eventowner AS event_owner
   , NVL (ea_attendeesid, mob_userid) AS attendee_id
+  , NVL (ea_firstname, mob_firstname) AS attendee_firstname
+  , NVL (ea_lastname, mob_lastname) AS attendee_lastname
   , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
 FROM coc_reporting.ea_eventattendance
 
