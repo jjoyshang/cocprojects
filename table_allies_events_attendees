@@ -22,6 +22,8 @@ SELECT
   , NVL (ea_attendeesid, mob_userid) AS combined_attendee_id
   , ea_attendeesid
   , mob_userid
+  , NVL (ea_firstname, mob_firstname) AS attendee_firstname
+  , NVL (ea_lastname, mob_lastname) AS attendee_lastname
 
 FROM coc_reporting.ea_eventattendance
 
@@ -78,9 +80,11 @@ join_events_people AS (
 SELECT 
   person_id
   , voterbase_id
-  --, primary_key
+  , combined_attendee_id
   , ea_attendeesid
   , mob_userid
+  , attendee_firstname
+  , attendee_lastname
   , CASE
   		WHEN event_name LIKE '%_allies'THEN 'Yes'
       ELSE 'No'
@@ -104,12 +108,15 @@ FROM join_events_people
 SELECT 
 	person_id AS person_id_allies
   , voterbase_id AS voterbase_id_allies
-  --, primary_key AS primary_key_temp
+  , combined_attendee_id
   , ea_attendeesid AS ea_attendeesid_allies
   , mob_userid AS mob_userid_allies
+  , attendee_firstname AS attendee_firstname_allies
+  , attendee_lastname AS attendee_lastname_allies
   , allies_event_attendee
 FROM deduping2
 WHERE event_dupe = 1
+	AND allies_event_attendee = 'Yes'
 ;
 
 
