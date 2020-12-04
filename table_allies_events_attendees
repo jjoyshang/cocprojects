@@ -4,8 +4,8 @@
 ---- ATTENTION!! Mobilize has not been syncing to tmc_activist_pool.coc_person_fields since 7/15/20 (tested 12/01/20). Therefore, people just in Mobilize NOT EA have nothing to join to in tmc_activist_pool.
 
 
-DROP TABLE IF EXISTS coc_reporting.allies_events_attendees;
-CREATE TABLE coc_reporting.allies_events_attendees AS
+DROP TABLE IF EXISTS coc_reporting.event_attendees_ally_flag;
+CREATE TABLE coc_reporting.event_attendees_ally_flag AS
 
 
 WITH ea_mob_table AS (
@@ -116,10 +116,10 @@ SELECT
   , allies_event_attendee
 FROM deduping2
 WHERE event_dupe = 1
-	AND allies_event_attendee = 'Yes'
+	--AND allies_event_attendee = 'Yes'
 ;
 
 
 -- Grant access:
-GRANT SELECT ON coc_reporting.allies_events_attendees TO GROUP coc;
-GRANT ALL ON coc_reporting.allies_events_attendees TO jharris1;
+GRANT SELECT ON coc_reporting.event_attendees_ally_flag TO GROUP coc;
+GRANT ALL ON coc_reporting.event_attendees_ally_flag TO jharris1;
