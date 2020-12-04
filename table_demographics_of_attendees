@@ -311,7 +311,7 @@ SELECT
   , ea_mob_table.*
   , NVL (pac_2020_state_region.region, rfm_regions.eventregion_byowner) AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
-  , allies_events_attendees.allies_event_attendee
+  , event_attendees_ally_flag.allies_event_attendee
 FROM vf_join
 
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
@@ -319,8 +319,8 @@ INNER JOIN ea_mob_table
   ON ea_mob_table.attendee_id = vf_join.primary_key
 -- Joining to table that indicates whether a person has ever attended an Allies event.
 -- https://platform.civisanalytics.com/spa/#/scripts/sql/101805527
-LEFT JOIN coc_reporting.allies_events_attendees
-	ON vf_join.person_id = allies_events_attendees.person_id_allies
+LEFT JOIN coc_reporting.event_attendees_ally_flag
+	ON vf_join.person_id = event_attendees_ally_flag.person_id_allies
 -- Joining to table that names region for event owners who are field managers.
 -- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
 LEFT JOIN coc_reporting.rfm_regions
