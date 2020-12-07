@@ -1,4 +1,5 @@
 -- * Create a table that pulls together relevant fields from Mobilize for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
+---- Includes records from both Color of Change c4 and Color of Change accounts.
 
 
 DROP TABLE IF EXISTS coc_reporting.mob_eventattendance;
@@ -96,11 +97,17 @@ mob_deduping2 AS (
 SELECT *
   , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY mob_modifieddate DESC) AS user_dup
 FROM mob_base2
-)
+),
 
 
+mob_pac_final AS (
 SELECT
 		mob_timeslotid
+  	-- To be used in final quering combining PAC and c4.
+  	, CASE WHEN mob_timeslotid IS NOT NULL
+  			THEN 'Color of Change PAC'
+  			ELSE NULL
+  		END AS mob_source
     , mob_eventid
     , (mob_eventid ||'.'|| mob_timeslotid) AS mob_shiftid
     		-- ^Adding a combined field for eventid + shiftid. This will help if joining with events in Every Action.
@@ -119,6 +126,138 @@ SELECT
   
 FROM mob_deduping2
 	WHERE user_dup = 1
+),
+
+
+mob_c4_base AS (
+SELECT
+  	coc_mobilize_c4_timeslots.id AS mob_c4_timeslotid
+        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
+    , coc_mobilize_c4_events.id AS mob_c4_eventid
+        -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
+  	, coc_mobilize_c4_van_events.van_id AS mob_c4_vaneventid
+    		-- ^For joining with events in EveryAction
+  	, coc_mobilize_c4_events.title AS mob_c4_eventname
+        -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
+  
+  ---- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING ----
+  			, CASE
+                WHEN coc_mobilize_c4_events.event_type = 'COMMUNITY' THEN 'Squad Action'
+                WHEN coc_mobilize_c4_events.event_type = 'MEETING' THEN 'Squad Meeting'
+                WHEN coc_mobilize_c4_events.event_type = 'OTHER' THEN 'Courtwatch Session'
+                WHEN coc_mobilize_c4_events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
+                WHEN coc_mobilize_c4_events.event_type = 'TEXT_BANK' THEN 'Textathon'
+                WHEN coc_mobilize_c4_events.event_type = 'TRAINING' THEN 'Training'
+                ELSE coc_mobilize_c4_events.event_type
+              END AS mob_c4_eventtype
+         	   -- ^Format to match EA
+  			, coc_mobilize_c4_events.location__region AS mob_c4_eventstate
+     			   -- ^The label in the table is weird, but the result is for state.
+  			, coc_mobilize_c4_timeslots.start_date AS mob_c4_date
+   		  , (coc_mobilize_c4_events.owner__family_name || ', ' || coc_mobilize_c4_events.owner__given_name) AS mob_c4_eventowner
+              -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
+              -- ^Combining the first and last name, since this field will just be for filtering events.
+
+  	, coc_mobilize_c4_events.modified_date AS mob_c4_modifieddate
+        -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+
+FROM coc_mobilize_c4.coc_mobilize_c4_events
+
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_timeslots
+	ON coc_mobilize_c4_timeslots.event_id = coc_mobilize_c4_events.id 
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_van_events 
+  ON coc_mobilize_c4_van_events.event_id = coc_mobilize_c4_events.id
+  
+WHERE coc_mobilize_c4_timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
+    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
+  AND coc_mobilize_c4_events.deleted_date IS NULL
+  AND coc_mobilize_c4_events.title NOT LIKE '%Cancelled%'
+    -- ^Filter out deleted events, where there is NULL for an event deleted date. In case an event was accidentally not marked as deleted, also filtering out events with 'Cancelled' in the name.
+  AND coc_mobilize_c4_events.organization__slug = 'colorofchange'
+    -- ^Filter just COC events. If not included, will include events from other orgs that we promote.
+),
+
+
+mob_c4_deduping AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY mob_c4_modifieddate DESC) AS c4_timeslot_dup
+FROM mob_c4_base
+),
+
+
+mob_c4_dedup AS (
+SELECT *
+FROM mob_c4_deduping
+	WHERE c4_timeslot_dup = 1
+  	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
+),
+
+
+mob_c4_base2 AS (
+SELECT
+    *
+    , coc_mobilize_c4_participations.user_id AS mob_c4_userid
+  	, coc_mobilize_c4_participations.user__given_name AS mob_c4_firstname
+  	, coc_mobilize_c4_participations.user__family_name AS mob_c4_lastname
+  	, coc_mobilize_c4_van_persons.van_id AS mob_c4_vanuserid
+  			-- For joining users with Every Action
+  	, coc_mobilize_c4_participations.postal_code_at_signup AS mob_c4_userzip
+  			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
+
+FROM mob_c4_dedup
+
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_participations
+	ON mob_c4_eventid = coc_mobilize_c4_participations.event_id
+  AND mob_c4_timeslotid = coc_mobilize_c4_participations.timeslot_id
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_van_persons
+  ON coc_mobilize_c4_van_persons.user_id = coc_mobilize_c4_participations.user_id
+
+WHERE coc_mobilize_c4_participations.attended = 't'
+	-- ^Filter for Completed attendances, where 'attended' equals true.
+),
+
+
+mob_c4_deduping2 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid, mob_c4_userid ORDER BY mob_c4_modifieddate DESC) AS c4_user_dup
+FROM mob_c4_base2
+),
+
+
+mob_c4_final AS (
+SELECT
+		mob_c4_timeslotid AS mob_timeslotid
+    	-- To be used in final quering combining PAC and c4.
+  	, CASE WHEN mob_c4_timeslotid IS NOT NULL
+  			THEN 'Color of Change C4'
+  			ELSE NULL
+  		END AS mob_source
+    , mob_c4_eventid AS mob_eventid 
+    , (mob_c4_eventid ||'.'|| mob_c4_timeslotid) AS mob_shiftid
+    		-- ^Adding a combined field for eventid + shiftid. This will help if joining with events in Every Action.
+    , mob_c4_vaneventid AS mob_vaneventid
+    , mob_c4_eventname AS mob_eventname
+    , mob_c4_eventtype AS mob_eventtype
+    , mob_c4_eventstate AS mob_eventstate
+    , mob_c4_date AS mob_date
+    , mob_c4_eventowner AS mob_eventowner
+  	, mob_c4_userid AS mob_userid
+    , mob_c4_firstname AS mob_firstname
+    , mob_c4_lastname AS mob_lastname
+    , mob_c4_vanuserid AS mob_userid
+  	, mob_c4_userzip AS mob_userid
+  -- ^Selecting only fields that I want in the final table. Leaving out for deduping.
+  
+FROM mob_c4_deduping2
+	WHERE c4_user_dup = 1
+)
+
+
+SELECT * FROM mob_pac_final
+	UNION ALL
+SELECT * FROM mob_c4_final
+
+
 ;
 
 -- Grant access:
