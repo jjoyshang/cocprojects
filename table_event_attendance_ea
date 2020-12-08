@@ -69,6 +69,10 @@ ea_dedup AS (
  
 SELECT
 		ea_eventid
+    , CASE WHEN ea_eventid IS NOT NULL
+  			THEN 'Every Action'
+  			ELSE NULL
+  		END AS ea_source
     , ea_date
     , ea_eventname
   	, ea_eventtype
