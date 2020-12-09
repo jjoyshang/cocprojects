@@ -1,0 +1,55 @@
+-- * Create a table combining event and attendance data from EveryAction and Mobilize PAC & c4. Makes it easier to create reports with event data joining both sources *
+
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+
+
+DROP TABLE IF EXISTS coc_reporting.ea_mob_eventattendance;
+CREATE TABLE coc_reporting.ea_mob_eventattendance AS
+
+-- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
+WITH base AS (SELECT
+	NVL (ea_eventid::varchar, mob_shiftid) AS unique_eventid
+  		-- ^Mobilize reference is the shiftid, which is event id plus timeslot id. This is beccause of the weird way Mobilize data is structured, where timeslots are shared across multiple events.
+  , NVL (ea_source, mob_source) AS sourceplatform
+  , NVL (ea_date, mob_date::varchar) AS event_date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+	, NVL (ea_eventstate, mob_eventstate) AS event_state
+  , mob_eventowner AS event_owner
+  , NVL (ea_attendeesid, mob_userid) AS attendee_id
+  , NVL (ea_firstname, mob_firstname) AS attendee_firstname
+  , NVL (ea_lastname, mob_lastname) AS attendee_lastname
+  , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
+
+FROM coc_reporting.ea_eventattendance
+
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+)
+
+SELECT 
+	base.*
+  , NVL (pac_2020_state_region.region, rfm_regions.eventregion_byowner) AS event_region
+  		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
+  , event_attendees_ally_flag.allies_event_attendee
+  , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
+  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+FROM base
+
+LEFT JOIN coc_reporting.event_attendees_ally_flag
+	ON base.attendee_id = event_attendees_ally_flag.combined_attendee_id
+-- Joining to table that names region for event owners who are field managers.
+-- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
+LEFT JOIN coc_reporting.rfm_regions
+  ON base.event_owner = rfm_regions.mob_eventowner
+-- Joining to base table that names the region for each state.
+LEFT JOIN coc_reporting.pac_2020_state_region
+  ON pac_2020_state_region.state = base.event_state
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.ea_mob_eventattendance TO GROUP coc;
+GRANT ALL ON coc_reporting.ea_mob_eventattendance TO jharris1;
