@@ -1,4 +1,8 @@
--- CTE here to only include only the top 10 states
+-- * Show the percentage race of attendees from the top 10 states where attendees live.*
+---- Base table ea_mob_eventattendance: https://platform.civisanalytics.com/spa/#/scripts/sql/103290282
+---- Base table vf_attendee_demographics: https://platform.civisanalytics.com/spa/#/scripts/sql/101610422
+
+-- CTE here to only include only the top 10 states, for limiting in the final select
 WITH base AS (
 SELECT
   COUNT (DISTINCT attendee_id) AS count_attendees
@@ -13,7 +17,7 @@ INNER JOIN tmc_misc.geo_lookup
 WHERE latest_attendance_rank = 1
   -- ^This field is a row number for every event an attendee has gone to. 1 is the most recent event. For removing duplicates per attendee.
 
-  -- For filtering. ! De-comment in Sisense !
+-- For filtering. ! De-comment in Sisense !
   --AND [event_owner=Event_Owner]
 	--AND [event_state=Event_State]
 	--AND [event_type=Event_Type]
