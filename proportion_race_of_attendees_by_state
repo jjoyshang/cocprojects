@@ -1,0 +1,40 @@
+-- CTE here to only include only the top 10 states
+WITH base AS (
+SELECT
+  COUNT (DISTINCT attendee_id) AS count_attendees
+      -- ^Distinct to ignore duplicates, since the geo_lookup table has multiple records for one zipcode.
+  , vb_tsmart_state AS state
+FROM coc_reporting.ea_mob_eventattendance
+
+-- Joining to geo_lookup table, which has fields for city and state.
+INNER JOIN tmc_misc.geo_lookup
+  ON geo_lookup.vb_tsmart_zip = ea_mob_eventattendance.attendee_zip
+
+WHERE latest_attendance_rank = 1
+  -- ^This field is a row number for every event an attendee has gone to. 1 is the most recent event. For removing duplicates per attendee.
+
+  -- For filtering. ! De-comment in Sisense !
+  --AND [event_owner=Event_Owner]
+	--AND [event_state=Event_State]
+	--AND [event_type=Event_Type]
+  --AND [allies_event_attendee=Allies]
+  --AND [event_region=Event_Region]
+
+GROUP BY 2
+ORDER BY 1 DESC
+LIMIT 10
+)  
+  
+SELECT
+  COUNT (vf_attendee_demographics.person_id)
+  , vf_attendee_demographics.state
+  , vf_attendee_demographics.race
+FROM base 
+INNER JOIN coc_reporting.vf_attendee_demographics
+  ON base.state = vf_attendee_demographics.state
+  -- ^Inner join, since we only want the top 10 states from the CTE.
+WHERE latest_attendance_rank = 1
+
+GROUP BY 2,3
+ORDER BY 1 DESC
+;
