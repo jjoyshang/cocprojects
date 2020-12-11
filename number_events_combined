@@ -8,7 +8,7 @@ SELECT
   COUNT (unique_eventid)
 FROM coc_reporting.ea_mob_eventattendance
 
-WHERE latest_event_attendance = 1
+WHERE latest_attendance_rank = 1
 -- ^Filters to only include the most recent event an attendee completed. Using this to dedup for one record per attendee.
 
 -- For filtering. ! De-comment in Sisense !
