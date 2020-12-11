@@ -1,32 +1,19 @@
 -- * Count the number of events from Every Action and Mobilize (not counting duplicates). Retain fields for filtering in Sisense. *
+-- Number Overlay chart
 
--- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
--- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
-
-
--- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
-WITH base AS (
-SELECT
-	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
-  , NVL (ea_date, mob_date::varchar) AS date
-  , NVL (ea_eventname, mob_eventname) AS event_name
-  , NVL (ea_eventtype, mob_eventtype) AS event_type
-	, NVL (ea_eventstate, mob_eventstate) AS event_state
-  , mob_eventowner AS event_owner
-
-FROM coc_reporting.ea_eventattendance
-
-FULL OUTER JOIN coc_reporting.mob_eventattendance
-	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
-  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
-)
+---- Base table ea_mob_eventattendance: https://platform.civisanalytics.com/spa/#/scripts/sql/103290282
+---- This table joins data on events and attendees from Every Action and Mobilize (c4 & PAC).
 
 SELECT
-  COUNT (DISTINCT event_id)
-FROM base
+  COUNT (unique_eventid)
+FROM coc_reporting.ea_mob_eventattendance
 
+WHERE latest_event_attendance = 1
+-- ^Filters to only include the most recent event an attendee completed. Using this to dedup for one record per attendee.
 
--- These lines for filtering in Sisense. !De-comment in Sisense!
---WHERE [event_state=State]
---  AND [event_type=Event_Type]
---  AND [event_owner=Event_Owner]
+-- For filtering. ! De-comment in Sisense !
+	--AND [event_owner=Event_Owner]
+	--AND [event_state=Event_State]
+	--AND [event_type=Event_Type]
+	--AND [allies_event_attendee=Allies]
+	--AND [event_region=Event_Region]
