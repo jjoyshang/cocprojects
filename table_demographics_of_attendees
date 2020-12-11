@@ -65,7 +65,10 @@ SELECT
   , ntl_current.vb_tsmart_zip AS zip
   , ntl_current.vb_voterbase_age AS age
 	, ntl_current.vb_voterbase_gender AS gender
-	, ntl_current.vb_voterbase_race AS race
+	, CASE WHEN ntl_current.vb_voterbase_race = 'Uncoded' THEN 'Unknown'
+  		ELSE ntl_current.vb_voterbase_race
+  	END AS race
+  		-- ^Renaming to be more clear and less technial.
 	, ntl_current.vb_voterbase_marital_status AS marital_status
   , ntl_current.vb_vf_party AS political_party
   , CASE
@@ -151,7 +154,6 @@ SELECT
   , CASE
     	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
         	AND ts_tsmart_catholic_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_catholic_raw_score >= ts_tsmart_nonchristian_raw_score
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_mormon_raw_score
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_non_religious_raw_score
@@ -159,7 +161,6 @@ SELECT
           ELSE CASE
        WHEN ts_tsmart_evangelical_raw_score >= ts_tsmart_catholic_raw_score
        		AND ts_tsmart_evangelical_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_nonchristian_raw_score
           AND ts_tsmart_evangelical_raw_score >= ts_tsmart_jewish_raw_score
           AND ts_tsmart_evangelical_raw_score >= ts_tsmart_mormon_raw_score
           AND ts_tsmart_evangelical_raw_score >= ts_tsmart_non_religious_raw_score
@@ -167,24 +168,14 @@ SELECT
           ELSE CASE
        WHEN ts_tsmart_otherchristian_raw_score >= ts_tsmart_catholic_raw_score
        		AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_nonchristian_raw_score
           AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_jewish_raw_score
           AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_mormon_raw_score
           AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Other Christian'
           ELSE CASE
-       WHEN ts_tsmart_nonchristian_raw_score >= ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_jewish_raw_score
-          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_mormon_raw_score
-          AND ts_tsmart_nonchristian_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Non-Christian'
-        ELSE CASE
        WHEN ts_tsmart_jewish_raw_score >= ts_tsmart_catholic_raw_score
        		AND ts_tsmart_jewish_raw_score >= ts_tsmart_evangelical_raw_score
           AND ts_tsmart_jewish_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_jewish_raw_score >= ts_tsmart_nonchristian_raw_score
           AND ts_tsmart_jewish_raw_score >= ts_tsmart_mormon_raw_score
           AND ts_tsmart_jewish_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Jewish'
@@ -192,7 +183,6 @@ SELECT
        WHEN ts_tsmart_mormon_raw_score >= ts_tsmart_catholic_raw_score
        		AND ts_tsmart_mormon_raw_score >= ts_tsmart_evangelical_raw_score
       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_otherchristian_raw_score
-      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_nonchristian_raw_score
        		AND ts_tsmart_mormon_raw_score >= ts_tsmart_jewish_raw_score
       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_non_religious_raw_score
           THEN 'Mormon'
@@ -200,12 +190,10 @@ SELECT
        WHEN ts_tsmart_non_religious_raw_score >= ts_tsmart_catholic_raw_score
       	 	AND ts_tsmart_non_religious_raw_score >= ts_tsmart_evangelical_raw_score
           AND ts_tsmart_non_religious_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_nonchristian_raw_score
           AND ts_tsmart_non_religious_raw_score >= ts_tsmart_jewish_raw_score
           AND ts_tsmart_non_religious_raw_score >= ts_tsmart_mormon_raw_score
           THEN 'Non-Religious'
         ELSE 'Unknown'
-        END
         END
         END
         END
