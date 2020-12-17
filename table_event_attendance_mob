@@ -24,6 +24,7 @@ SELECT
                 WHEN events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
                 WHEN events.event_type = 'TEXT_BANK' THEN 'Textathon'
                 WHEN events.event_type = 'TRAINING' THEN 'Training'
+  							WHEN events.event_type = 'FRIEND_TO_FRIEND_OUTREACH' THEN 'Friend to Friend Outreach'
                 ELSE events.event_type
               END AS mob_eventtype
          	   -- ^Format to match EA
@@ -148,6 +149,7 @@ SELECT
                 WHEN coc_mobilize_c4_events.event_type = 'PHONE_BANK' THEN 'Phone Banking'
                 WHEN coc_mobilize_c4_events.event_type = 'TEXT_BANK' THEN 'Textathon'
                 WHEN coc_mobilize_c4_events.event_type = 'TRAINING' THEN 'Training'
+  							WHEN events.event_type = 'FRIEND_TO_FRIEND_OUTREACH' THEN 'Friend to Friend Outreach'
                 ELSE coc_mobilize_c4_events.event_type
               END AS mob_c4_eventtype
          	   -- ^Format to match EA
