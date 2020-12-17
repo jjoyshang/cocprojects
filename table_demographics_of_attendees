@@ -243,6 +243,8 @@ SELECT
   	-- ^A higher score indicates a higher likelihood that a person supports raising government spending on student aid to make college more affordable.
   , ntl_current.ts_tsmart_climate_change_score AS climate_change_score
   	-- ^A higher score indicates a higher likelihood that a person supports stricter laws and regulations to address climate change.
+  , ntl_current.ts_tsmart_minimum_wage_score AS minimum_wage_score
+  	-- ^A higher score indicates a higher likelihood to support raising the minimum wage to $15 or more.
   , ntl_current.predictwise_environmentalism_score AS environmentalism_score
   	-- ^A higher score indicates a higher likelihood that a person supports protecting the environment, based on attitudes towards renewable energy, climate change, and oil and gas exploration.
   	-- ^Predictwise score
