@@ -32,7 +32,7 @@ FULL OUTER JOIN coc_reporting.mob_eventattendance
 
 SELECT 
 	base.*
-  , NVL (pac_2020_state_region.region, rfm_regions.eventregion_byowner) AS event_region
+  , NVL (pac_2020_state_region.region, rfm_regions.region) AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
   , event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
@@ -44,7 +44,7 @@ LEFT JOIN coc_reporting.event_attendees_ally_flag
 -- Joining to table that names region for event owners who are field managers.
 -- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
 LEFT JOIN coc_reporting.rfm_regions
-  ON base.event_owner = rfm_regions.mob_eventowner
+  ON base.event_owner = rfm_regions.event_owner
 -- Joining to base table that names the region for each state.
 LEFT JOIN coc_reporting.pac_2020_state_region
   ON pac_2020_state_region.state = base.event_state
