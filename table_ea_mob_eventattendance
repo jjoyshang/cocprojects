@@ -9,7 +9,7 @@ CREATE TABLE coc_reporting.ea_mob_eventattendance AS
 
 -- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
 WITH base AS (SELECT
-	NVL (ea_eventid::varchar, mob_shiftid) AS unique_eventid
+	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
   		-- ^Mobilize reference is the shiftid, which is event id plus timeslot id. This is beccause of the weird way Mobilize data is structured, where timeslots are shared across multiple events.
   , NVL (ea_source, mob_source) AS sourceplatform
   , NVL (ea_date, mob_date::varchar) AS event_date
@@ -28,11 +28,25 @@ FULL OUTER JOIN coc_reporting.mob_eventattendance
 	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
   AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
   -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
+),
+
+
+-- Base table that names region for event owners.
+---- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
+-- CTE to update end date in this table as the date when run, in order to join with event date below.
+temp_region AS (
+SELECT
+  *
+  , CASE WHEN rfm_regions.end_date IS NULL THEN ((SELECT GETDATE ())::varchar)
+  		ELSE rfm_regions.end_date
+  	END AS end_date_dailyupdate
+FROM coc_reporting.rfm_regions
 )
+
 
 SELECT 
 	base.*
-  , NVL (pac_2020_state_region.region, rfm_regions.region) AS event_region
+  , NVL (pac_2020_state_region.region, temp_region.region) AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
   , event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
@@ -41,10 +55,11 @@ FROM base
 
 LEFT JOIN coc_reporting.event_attendees_ally_flag
 	ON base.attendee_id = event_attendees_ally_flag.combined_attendee_id
--- Joining to table that names region for event owners who are field managers.
--- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
-LEFT JOIN coc_reporting.rfm_regions
-  ON base.event_owner = rfm_regions.event_owner
+-- Joining to CTE with RFM Regions. Event date is within the field manager's dates for the region.
+LEFT JOIN temp_region
+  ON base.event_owner = temp_region.event_owner
+  AND base.event_date >= temp_region.start_date
+  AND base.event_date < temp_region.end_date_dailyupdate
 -- Joining to base table that names the region for each state.
 LEFT JOIN coc_reporting.pac_2020_state_region
   ON pac_2020_state_region.state = base.event_state
