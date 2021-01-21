@@ -266,59 +266,21 @@ FROM dedup1
 -- Inner join since we only want members included in the voter file.
 INNER JOIN ts.ntl_current
  	ON ntl_current.vb_voterbase_id = dedup1.voterbase_id
-),
-
-
--- Table of event and attendance information from Every Action and Mobilize:
----- These tables are already filtering for participations with role = 'attendee', participation = 'completed', event date since Sept 2020 , event not cancelled.
-ea_mob_table AS (
--- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
--- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
-SELECT
-  NVL (ea_eventid::varchar, mob_shiftid) AS event_id
-  , NVL (ea_date, mob_date::varchar) AS event_date
-  , NVL (ea_eventname, mob_eventname) AS event_name
-  , NVL (ea_eventtype, mob_eventtype) AS event_type
-	, NVL (ea_eventstate, mob_eventstate) AS event_state
-  , mob_eventowner AS event_owner
-  , NVL (ea_attendeesid, mob_userid) AS attendee_id
-  , NVL (ea_firstname, mob_firstname) AS attendee_firstname
-  , NVL (ea_lastname, mob_lastname) AS attendee_lastname
-  , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
-FROM coc_reporting.ea_eventattendance
-
-FULL OUTER JOIN coc_reporting.mob_eventattendance
-	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
-  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
-  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
 )
 
 
 SELECT 
   vf_join.*
-  , ea_mob_table.*
-  , NVL (pac_2020_state_region.region, rfm_regions.event_owner) AS event_region
-  		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
-  , event_attendees_ally_flag.allies_event_attendee
-  , ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY event_date DESC) AS latest_attendance_rank
-  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+  , ea_mob_eventattendance.*
+
 FROM vf_join
 
+-- Joining to table of event and attendance information from Every Action and Mobilize. Also includes fields for event_region, ally flag, and latest_attendance_rank.
+---- https://platform.civisanalytics.com/spa/#/scripts/sql/103290282
+---- These tables are already filtering for participations with role = 'attendee', participation = 'completed', event date since Sept 2020 , event not cancelled.
 -- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
-INNER JOIN ea_mob_table
-  ON ea_mob_table.attendee_id = vf_join.primary_key
--- Joining to table that indicates whether a person has ever attended an Allies event.
--- https://platform.civisanalytics.com/spa/#/scripts/sql/101805527
-LEFT JOIN coc_reporting.event_attendees_ally_flag
-	ON vf_join.person_id = event_attendees_ally_flag.person_id_allies
--- Joining to table that names region for event owners who are field managers.
--- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
-LEFT JOIN coc_reporting.rfm_regions
-  ON ea_mob_table.event_owner = rfm_regions.event_owner
--- Joining to base table that names the region for each state.
-LEFT JOIN coc_reporting.pac_2020_state_region
-  ON pac_2020_state_region.state = ea_mob_table.event_state
- 
+INNER JOIN coc_reporting.ea_mob_eventattendance
+  ON ea_mob_eventattendance.attendee_id = vf_join.primary_key
  
 ;
 
