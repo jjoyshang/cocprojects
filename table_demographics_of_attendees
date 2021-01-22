@@ -286,12 +286,5 @@ INNER JOIN coc_reporting.ea_mob_eventattendance
 
 
 -- Grant access:
---GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
---GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
-
-
-INSERT INTO coc_reporting.rfm_regions (event_owner, start_date)
-SELECT event_owner, event_date
-FROM coc_reporting.vf_attendee_demographics
-WHERE event_region IS NULL
-;
+GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
+GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
