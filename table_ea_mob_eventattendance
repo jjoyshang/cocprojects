@@ -9,7 +9,7 @@ CREATE TABLE coc_reporting.ea_mob_eventattendance AS
 
 -- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
 WITH base AS (SELECT
-	NVL (ea_eventid::varchar, mob_shiftid) AS event_id
+	NVL (ea_eventid::varchar, mob_shiftid) AS unique_eventid
   		-- ^Mobilize reference is the shiftid, which is event id plus timeslot id. This is beccause of the weird way Mobilize data is structured, where timeslots are shared across multiple events.
   , NVL (ea_source, mob_source) AS sourceplatform
   , NVL (ea_date, mob_date::varchar) AS event_date
@@ -46,7 +46,10 @@ FROM coc_reporting.rfm_regions
 
 SELECT 
 	base.*
-  , NVL (pac_2020_state_region.region, temp_region.region) AS event_region
+  , CASE WHEN pac_2020_state_region.region IS NULL 
+  			THEN temp_region.region
+        ELSE 'Unknown'
+     END AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
   , event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
