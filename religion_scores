@@ -1,0 +1,66 @@
+SELECT
+  attendee_id
+  
+-- Find the highest religion score for each person.
+  , CASE
+    	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
+        	AND ts_tsmart_catholic_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_catholic_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Catholic'
+          ELSE CASE
+       WHEN ts_tsmart_evangelical_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_evangelical_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Evangelical'
+          ELSE CASE
+       WHEN ts_tsmart_otherchristian_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Other Christian'
+          ELSE CASE
+       WHEN ts_tsmart_jewish_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_jewish_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_mormon_raw_score
+          AND ts_tsmart_jewish_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Jewish'
+          ELSE CASE
+       WHEN ts_tsmart_mormon_raw_score >= ts_tsmart_catholic_raw_score
+       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_evangelical_raw_score
+      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_otherchristian_raw_score
+       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_jewish_raw_score
+      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_non_religious_raw_score
+          THEN 'Mormon'
+        ELSE CASE
+       WHEN ts_tsmart_non_religious_raw_score >= ts_tsmart_catholic_raw_score
+      	 	AND ts_tsmart_non_religious_raw_score >= ts_tsmart_evangelical_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_otherchristian_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_jewish_raw_score
+          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_mormon_raw_score
+          THEN 'Non-Religious'
+        ELSE 'Unknown'
+        END
+        END
+        END
+        END
+        END
+     END AS religion_highest_score
+
+-- Match the score number to the top religion.
+  , CASE
+  			WHEN religion_highest_score = 'Catholic' THEN ts_tsmart_catholic_raw_score
+        WHEN religion_highest_score = 'Evangelical' THEN ts_tsmart_evangelical_raw_score
+        WHEN religion_highest_score = 'Other Christian' THEN ts_tsmart_otherchristian_raw_score
+        WHEN religion_highest_score = 'Non-Christian' THEN ts_tsmart_nonchristian_raw_score
+        WHEN religion_highest_score = 'Jewish' THEN ts_tsmart_jewish_raw_score
+        WHEN religion_highest_score = 'Mormon' THEN ts_tsmart_mormon_raw_score
+        WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
+     	 ELSE NULL
+		 END AS religion_score_number
+ FROM ts.ntl_current
