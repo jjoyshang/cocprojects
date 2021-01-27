@@ -46,10 +46,7 @@ FROM coc_reporting.rfm_regions
 
 SELECT 
 	base.*
-  , CASE WHEN pac_2020_state_region.region IS NULL 
-  			THEN temp_region.region
-        ELSE 'Unknown'
-     END AS event_region
+  , NVL(pac_2020_state_region.region, temp_region.region, 'Unknown') AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
   , event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
