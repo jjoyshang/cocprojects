@@ -7,7 +7,7 @@ CREATE TABLE coc_reporting.ea_eventattendance AS
 
 WITH ea_base AS (
 SELECT
-    coc_events.eventid AS ea_eventid
+    coc_eea_dattid AS ea_eventid
     , LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS ea_date
         -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
         -- ^Included for filtering.
