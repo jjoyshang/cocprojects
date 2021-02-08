@@ -37,7 +37,7 @@ FULL OUTER JOIN coc_reporting.mob_eventattendance
 temp_region AS (
 SELECT
   *
-  , CASE WHEN rfm_regions.end_date IS NULL THEN ((SELECT GETDATE ())::varchar)
+  , CASE WHEN rfm_regions.end_date IS NULL THEN ((SELECT GETDATE ()))
   		ELSE rfm_regions.end_date
   	END AS end_date_dailyupdate
 FROM coc_reporting.rfm_regions
