@@ -43,8 +43,6 @@ LEFT JOIN tmc_van.coc_contactsaddresses_mym
   ON coc_contactsaddresses_mym.vanid = coc_eventsignups.vanid
 LEFT JOIN tmc_van.coc_contacts_mym
   ON coc_contactsaddresses_mym.vanid = coc_contacts_mym.vanid
-LEFT JOIN tmc_misc.zip_lat_long
-  ON zip_lat_long.zip = coc_contactsaddresses_mym.zip5
 
 WHERE
 	coc_eventsignups.eventrolename = 'Attendee'
