@@ -25,8 +25,11 @@ SELECT
   	, coc_contacts_mym.firstname AS ea_firstname
   	, coc_contacts_mym.lastname AS ea_lastname
   	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
-  	, coc_contactsaddresses_mym.datemodified AS zip_datemodified
-  			-- ^Used to dedup
+  	, ROW_NUMBER () OVER (PARTITION BY coc_events.eventid, coc_eventsignups.vanid ORDER BY coc_eventsignupsstatuses.datemodified DESC) as ea_signupdupe
+  	-- ^For deduping eventsignups
+
+  -- Included for deduping addresses below
+  	, coc_contactsaddresses_mym.datemodified AS address_datemodified
 
 FROM tmc_van.coc_events
 
@@ -42,7 +45,7 @@ LEFT JOIN tmc_van.coc_locations
 LEFT JOIN tmc_van.coc_contactsaddresses_mym
   ON coc_contactsaddresses_mym.vanid = coc_eventsignups.vanid
 LEFT JOIN tmc_van.coc_contacts_mym
-  ON coc_contactsaddresses_mym.vanid = coc_contacts_mym.vanid
+  ON coc_contacts_mym.vanid = coc_eventsignups.vanid
 
 WHERE
 	coc_eventsignups.eventrolename = 'Attendee'
@@ -54,17 +57,15 @@ WHERE
   AND coc_events.eventname NOT LIKE '%Cancelled%'
     -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
 )
-,
 
-
-ea_dedup AS (
- SELECT *
-   , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY zip_datemodified DESC) as ea_eventid_dup
- FROM ea_base
- )
-  -- If no dedup, a ton of duplicates
-
- 
+, dedup_signups AS (
+SELECT * 
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY address_datemodified DESC) as ea_addressdupe
+FROM ea_base
+WHERE ea_signupdupe = 1
+)
+  
+  
 SELECT
 		ea_eventid
     , CASE WHEN ea_eventid IS NOT NULL
@@ -81,8 +82,8 @@ SELECT
   	, ea_attendeeszip
   -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
     
-FROM ea_dedup
-WHERE ea_eventid_dup = 1
+FROM dedup_signups
+WHERE ea_addressdupe = 1
 ;
 
 -- Grant access:
