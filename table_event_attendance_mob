@@ -126,7 +126,8 @@ SELECT
     , mob_eventname
     , mob_eventtype
     , mob_eventstate
-    , mob_date
+    , convert_timezone('gmt', 'est', mob_date::timestamp)::date AS mob_date
+        -- ^ Convert timezone from GMT to EST
     , mob_eventowner
   	, mob_userid
     , mob_firstname
@@ -256,7 +257,7 @@ SELECT
     , mob_c4_eventname AS mob_eventname
     , mob_c4_eventtype AS mob_eventtype
     , mob_c4_eventstate AS mob_eventstate
-    , mob_c4_date AS mob_date
+    , convert_timezone('gmt', 'est', mob_c4_date::timestamp)::date AS mob_date
     , mob_c4_eventowner AS mob_eventowner
   	, mob_c4_userid AS mob_userid
     , mob_c4_firstname AS mob_firstname
