@@ -48,13 +48,13 @@ SELECT
 	base.*
   , NVL(pac_2020_state_region.region, temp_region.region, 'Unknown') AS event_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
-  , event_attendees_ally_flag.allies_event_attendee
+  --, event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
   		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
 FROM base
 
-LEFT JOIN coc_reporting.event_attendees_ally_flag
-	ON base.attendee_id = event_attendees_ally_flag.combined_attendee_id
+/*LEFT JOIN coc_reporting.event_attendees_ally_flag
+	ON base.attendee_id = event_attendees_ally_flag.combined_attendee_id*/
 -- Joining to CTE with RFM Regions. Event date is within the field manager's dates for the region.
 LEFT JOIN temp_region
   ON base.event_owner = temp_region.event_owner
