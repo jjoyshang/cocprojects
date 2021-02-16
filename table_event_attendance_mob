@@ -7,13 +7,13 @@ CREATE TABLE coc_reporting.mob_eventattendance AS
 
 WITH mob_base AS (
 SELECT
-  	timeslots.id AS mob_timeslotid
+	timeslots.id AS mob_timeslotid
         -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
-    , events.id AS mob_eventid
+	, events.id AS mob_eventid
         -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
-  	, van_events.van_id AS mob_vaneventid
+	, van_events.van_id AS mob_vaneventid
     		-- ^For joining with events in EveryAction
-  	, events.title AS mob_eventname
+	, events.title AS mob_eventname
         -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
   
   ---- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING ----
@@ -28,6 +28,7 @@ SELECT
                 ELSE events.event_type
               END AS mob_eventtype
          	   -- ^Format to match EA
+  
   			, events.location__region AS mob_eventstate
      			   -- ^The label in the table is weird, but the result is for state.
   			, timeslots.start_date AS mob_date
@@ -35,14 +36,16 @@ SELECT
               -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
               -- ^Combining the first and last name, since this field will just be for filtering events.
 
-  	, events.modified_date AS mob_modifieddate
+	,  ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY events.modified_date DESC) AS timeslot_dup
         -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+	, van_events.modified_date AS van_modifieddate
+  			-- ^For deduping later.
 
 FROM coc_mobilize_pac.events
 
 LEFT JOIN coc_mobilize_pac.timeslots
 	ON timeslots.event_id = events.id 
-LEFT JOIN coc_mobilize_pac.van_events 
+LEFT JOIN coc_mobilize_pac.van_events
   ON van_events.event_id = events.id
   
 WHERE timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
@@ -55,18 +58,20 @@ WHERE timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE 
 ),
 
 
+-- This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
 mob_deduping AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY mob_modifieddate DESC) AS timeslot_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY van_modifieddate DESC) AS van_dup
 FROM mob_base
+WHERE timeslot_dup = 1
 ),
 
 
+-- This CTE is deduping van_ids to event.ids that connect Mobilize to Every Action.
 mob_dedup AS (
 SELECT *
 FROM mob_deduping
-	WHERE timeslot_dup = 1
-  	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
+	WHERE van_dup = 1
 ),
 
 
@@ -80,6 +85,10 @@ SELECT
   			-- For joining users with Every Action
   	, participations.postal_code_at_signup AS mob_userzip
   			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
+  	, ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY participations.modified_date DESC) AS user_dup
+  			-- ^For deduping per person, per event and shift.
+  	, van_persons.modified_date AS van_person_moddate
+  			-- ^For deduping later.
 
 FROM mob_dedup
 
@@ -96,8 +105,9 @@ WHERE participations.attended = 't'
 
 mob_deduping2 AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY mob_modifieddate DESC) AS user_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY van_person_moddate DESC) AS van_person_dup
 FROM mob_base2
+WHERE user_dup = 1
 ),
 
 
@@ -126,7 +136,7 @@ SELECT
   -- ^Selecting only fields that I want in the final table. Leaving out for deduping.
   
 FROM mob_deduping2
-	WHERE user_dup = 1
+	WHERE van_person_dup = 1
 ),
 
 
@@ -160,8 +170,9 @@ SELECT
               -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
               -- ^Combining the first and last name, since this field will just be for filtering events.
 
-  	, coc_mobilize_c4_events.modified_date AS mob_c4_modifieddate
+  	, ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY coc_mobilize_c4_events.modified_date DESC) AS c4_timeslot_dup
         -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+  	, coc_mobilize_c4_van_events.modified_date AS c4_van_moddate
 
 FROM coc_mobilize_c4.coc_mobilize_c4_events
 
@@ -180,18 +191,19 @@ WHERE coc_mobilize_c4_timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND 
 ),
 
 
+-- This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
 mob_c4_deduping AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY mob_c4_modifieddate DESC) AS c4_timeslot_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY c4_van_moddate DESC) AS c4_van_dup
 FROM mob_c4_base
+WHERE c4_timeslot_dup = 1
 ),
 
 
 mob_c4_dedup AS (
 SELECT *
 FROM mob_c4_deduping
-	WHERE c4_timeslot_dup = 1
-  	-- ^This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
+	WHERE c4_van_dup = 1
 ),
 
 
@@ -205,6 +217,8 @@ SELECT
   			-- For joining users with Every Action
   	, coc_mobilize_c4_participations.postal_code_at_signup AS mob_c4_userzip
   			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
+  	, ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid, mob_c4_userid ORDER BY coc_mobilize_c4_participations.modified_date DESC) AS c4_user_dup
+  	, coc_mobilize_c4_van_persons.modified_date AS c4_van_person_moddate
 
 FROM mob_c4_dedup
 
@@ -221,8 +235,9 @@ WHERE coc_mobilize_c4_participations.attended = 't'
 
 mob_c4_deduping2 AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid, mob_c4_userid ORDER BY mob_c4_modifieddate DESC) AS c4_user_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid, mob_c4_userid ORDER BY c4_van_person_moddate DESC) AS c4_van_person_dup
 FROM mob_c4_base2
+WHERE c4_user_dup = 1
 ),
 
 
@@ -251,7 +266,7 @@ SELECT
   -- ^Selecting only fields that I want in the final table. Leaving out for deduping.
   
 FROM mob_c4_deduping2
-	WHERE c4_user_dup = 1
+	WHERE c4_van_person_dup = 1
 )
 
 
