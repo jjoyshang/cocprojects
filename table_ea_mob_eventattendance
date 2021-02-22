@@ -46,7 +46,7 @@ FROM coc_reporting.rfm_regions
 
 SELECT 
 	base.*
-  , NVL(pac_2020_state_region.region, temp_region.region, 'Unknown') AS event_region
+  , NVL(temp_region.region, 'Unknown') AS rfm_region
   		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
   --, event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
@@ -60,9 +60,7 @@ LEFT JOIN temp_region
   ON base.event_owner = temp_region.event_owner
   AND base.event_date >= temp_region.start_date
   AND base.event_date < temp_region.end_date_dailyupdate
--- Joining to base table that names the region for each state.
-LEFT JOIN coc_reporting.pac_2020_state_region
-  ON pac_2020_state_region.state = base.event_state
+
 ;
 
 -- Grant access:
