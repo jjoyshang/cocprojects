@@ -47,7 +47,7 @@ FROM coc_reporting.rfm_regions
 SELECT 
 	base.*
   , NVL(temp_region.region, 'Unknown') AS rfm_region
-  		-- ^Pull the region based on the event state first, if none then pull region by event owner. The event state is a more reliable source since it tells us exactly where the event is. However, field managers are associated with a region and are probably hosting events for that region.
+  		-- ^Simplifying this field. Formally referenced location of the event as "event_region". Now only reflects the region of the event owner, as defined by how staff are organized.
   --, event_attendees_ally_flag.allies_event_attendee
   , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
   		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
