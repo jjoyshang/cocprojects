@@ -1,290 +1,70 @@
--- * Display demographic information on our engaged members, by joining to information from the voterfile. Demographic info includes age, gender, race, education level, household income, urbanicity etc. *
--- Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an event since Sept 2020, and include fields like event owner and event type.
+-- * Create a table combining event and attendance data from EveryAction and Mobilize PAC & c4. Makes it easier to create reports with event data joining both sources *
 
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
 
-DROP TABLE IF EXISTS coc_reporting.vf_attendee_demographics;
-CREATE TABLE coc_reporting.vf_attendee_demographics AS
+GRANT SELECT ON coc_reporting.rfm_regions TO GROUP coc;
+GRANT ALL ON coc_reporting.rfm_regions TO jharris1;
 
+DROP TABLE IF EXISTS coc_reporting.ea_mob_eventattendance;
+CREATE TABLE coc_reporting.ea_mob_eventattendance AS
 
-WITH base AS (
-SELECT
-	coc_identities.person_id AS person_id
-  , coc_member_profile.voterbase_id AS voterbase_id
-  --, coc_member_profile.vb_smartvan_id AS smartvan_id
-  	-- ^Not seeing a smartvan in updated schema as of 12/01/2020
-  , coc_person_fields.first_name AS first_name
-  , coc_person_fields.last_name AS last_name
-  , coc_person_fields.vendor AS vendor
-  , coc_person_fields.primary_key AS primary_key
-  		-- ^Include to join to Every Action and Mobilize
-  , coc_person_fields.updated_at
+-- Where there are two versions of a field, I am selecting EA first. This is because Mob events stop syncing to EA 24 hours after the event occurs. Therefore, we encourage staff to update events in EA and view that data as more up-to-date. Where there is no EA field I use a Mob field OR use a Null function (NVL) to pull from the EA table first, then the Mob table.
+WITH base AS (SELECT
+	NVL (ea_eventid::varchar, mob_shiftid) AS unique_eventid
+  		-- ^Mobilize reference is the shiftid, which is event id plus timeslot id. This is beccause of the weird way Mobilize data is structured, where timeslots are shared across multiple events.
+  , NVL (ea_source, mob_source) AS sourceplatform
+  , NVL (ea_date, mob_date::varchar) AS event_date
+  , NVL (ea_eventname, mob_eventname) AS event_name
+  , NVL (ea_eventtype, mob_eventtype) AS event_type
+	, NVL (ea_eventstate, mob_eventstate) AS event_state
+  , mob_eventowner AS event_owner
+  , NVL (ea_attendeesid, mob_userid) AS attendee_id
+  , NVL (ea_firstname, mob_firstname) AS attendee_firstname
+  , NVL (ea_lastname, mob_lastname) AS attendee_lastname
+  , NVL (ea_attendeeszip, mob_userzip) AS attendee_zip
 
--- Start with coc_identities as base, since other tables in tmc_activist_pool refer back to it.
-FROM tmc_activist_pool.coc_identities
+FROM coc_reporting.ea_eventattendance
 
--- coc_member_profile table is join to the voterfile. Inner join since we only want members included in the voter file.
-INNER JOIN tmc_activist_pool.coc_member_profile
-	ON coc_member_profile.matchbackid = coc_identities.person_id
--- coc_person_fields table is join to records in different platforms. Inner join since we only want members who have records in Every Action and/or Mobilize.
-INNER JOIN tmc_activist_pool.coc_person_fields
-	ON coc_identities.person_id = coc_person_fields.person_id
-
-WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
-  --AND coc_member_profile.vb_tsmart_state = 'CA'
-  	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
+FULL OUTER JOIN coc_reporting.mob_eventattendance
+	ON mob_eventattendance.mob_vaneventid = ea_eventattendance.ea_eventid
+  AND mob_eventattendance.mob_vanuserid = ea_eventattendance.ea_attendeesid
+  -- ^Full Outer Join, since this will includes all records from EA and Mob. This accounts for if there is an event in one platform but not the other.
 ),
 
 
--- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields, but keeping multiple records of one person if they are in both Every Action and Mobilize.
-deduping1 AS (
-SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY person_id, vendor ORDER BY updated_at DESC) AS person_dupe
-FROM base
-),
-
-
-dedup1 AS (
-SELECT *
-FROM deduping1
-WHERE person_dupe = 1
-)
-,
-
--- Join to the voter file
-vf_join AS (
+-- Base table that names region for event owners.
+---- https://platform.civisanalytics.com/spa/#/scripts/sql/101909788
+-- CTE to update end date in this table as the date when run, in order to join with event date below.
+temp_region AS (
 SELECT
--- Fields from tmc_activist_pool:
-  person_id
-  , voterbase_id
-  , primary_key
-  , first_name
-  , last_name
--- Fields from the voter file:
-  , ntl_current.vb_tsmart_state AS state
-  , ntl_current.vb_tsmart_city AS city
-  , ntl_current.vb_tsmart_zip AS zip
-  , ntl_current.vb_voterbase_age AS age
-	, ntl_current.vb_voterbase_gender AS gender
-	, CASE WHEN ntl_current.vb_voterbase_race = 'Uncoded' THEN 'Unknown'
-  		ELSE ntl_current.vb_voterbase_race
-  	END AS race
-  		-- ^Renaming to be more clear and less technial.
-	, ntl_current.vb_voterbase_marital_status AS marital_status
-  , ntl_current.vb_vf_party AS political_party
-  , CASE
-      	WHEN ntl_current.vb_family_composition_code = 'A' THEN 'Single'
-      	WHEN ntl_current.vb_family_composition_code = 'B' THEN 'Single with children'
-      	WHEN ntl_current.vb_family_composition_code = 'C' THEN 'Couple'
-      	WHEN ntl_current.vb_family_composition_code = 'D' THEN 'Couple with children'
-      	WHEN ntl_current.vb_family_composition_code = 'E' THEN 'Multiple generations'
-       	WHEN ntl_current.vb_family_composition_code = 'F' THEN 'More than 3 surnames'
-        WHEN ntl_current.vb_family_composition_code = 'G' THEN 'Other'
-       	ELSE ntl_current.vb_family_composition_code 
-    	END AS family_composition
-  , ntl_current.vb_number_of_children_in_household AS number_children
-  , CASE
-      	WHEN ntl_current.vb_homeowner_indicator = 'Y' THEN 'Yes'
-      	WHEN ntl_current.vb_homeowner_indicator = 'N' THEN 'No'
-      	WHEN ntl_current.vb_homeowner_indicator = 'U' THEN 'Unknown'
-       	ELSE ntl_current.vb_homeowner_indicator 
-    	END AS homeowner_indicator
-  , CASE
-  			WHEN ntl_current.vb_household_income_amount < 25 THEN '< $25,000'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 25 AND ntl_current.vb_household_income_amount < 50 THEN '$25,000 - $49,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 50 AND ntl_current.vb_household_income_amount < 75 THEN '$50,000 - $74,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 75 AND ntl_current.vb_household_income_amount < 100 THEN '$75,000 - $99,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 100 AND ntl_current.vb_household_income_amount < 150 THEN '$100,000 - $149,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 150 AND ntl_current.vb_household_income_amount < 200 THEN
-'$150,000 - $199,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 150 AND ntl_current.vb_household_income_amount < 200 THEN '$150,000 - $199,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 200 AND ntl_current.vb_household_income_amount < 250 THEN '$200,000 - $249,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 250 AND ntl_current.vb_household_income_amount < 500 THEN '$250,000 - $499,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 500 AND ntl_current.vb_household_income_amount < 750 THEN '$500,000 - $749,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 750 AND ntl_current.vb_household_income_amount < 1000 THEN '$750,000 - $999,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 1000 AND ntl_current.vb_household_income_amount < 2500 THEN '$1,000,000 - $2,499,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 2500 THEN '> $2,500,000'::varchar
-  			ELSE ntl_current.vb_household_income_amount::varchar
-  	END AS household_income_buckets
-  , CASE
-      	WHEN ntl_current.vb_household_net_worth = 'A' THEN '< $25,000'
-      	WHEN ntl_current.vb_household_net_worth = 'B' THEN '$25,000 - $49,999'
-      	WHEN ntl_current.vb_household_net_worth = 'C' THEN '$50,000 - $74,999'
-      	WHEN ntl_current.vb_household_net_worth = 'D' THEN '$75,000 - $99,999'
-      	WHEN ntl_current.vb_household_net_worth = 'E' THEN '$100,000 - $149,999'
-       	WHEN ntl_current.vb_household_net_worth = 'F' THEN '$150,000 - $199,999'
-        WHEN ntl_current.vb_household_net_worth = 'G' THEN '$200,000 - $249,999'
-       	WHEN ntl_current.vb_household_net_worth = 'H' THEN '$250,000 - $499,999'
-        WHEN ntl_current.vb_household_net_worth = 'I' THEN '$500,000 - $749,999'
-        WHEN ntl_current.vb_household_net_worth = 'J' THEN '$750,000 - $999,999'
-        WHEN ntl_current.vb_household_net_worth = 'K' THEN '$1,000,000 - $2,499,999'
-        WHEN ntl_current.vb_household_net_worth = 'L' THEN '$2,500,000 - $4,999,999'
-        WHEN ntl_current.vb_household_net_worth = 'M' THEN '$5,000,000 - $9,999,999'
-        WHEN ntl_current.vb_household_net_worth = 'N' THEN '> $10,000,000'
-       	ELSE ntl_current.vb_household_net_worth
-    	END AS household_net_worth
-  , CASE
-      	WHEN ntl_current.vb_education = '0' THEN 'Unknown'::varchar
-      	WHEN ntl_current.vb_education = '1' THEN 'High School'::varchar
-      	WHEN ntl_current.vb_education = '2' THEN 'Some College'::varchar
-      	WHEN ntl_current.vb_education = '3' THEN 'College Graduate'::varchar
-      	WHEN ntl_current.vb_education = '4' THEN 'Post Graduate'::varchar
-        WHEN ntl_current.vb_education = '6' THEN 'Less than High School Diploma'::varchar
-       	ELSE ntl_current.vb_education::varchar
-    	END AS highest_education
-  , CASE
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN '1 Rural (least dense)'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN '2 Rural'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN '3 Suburban'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN '4 Suburban'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN '5 Urban'
-        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN '6 Urban (most dense)'
-       	ELSE ntl_current.ts_tsmart_urbanicity
-    	END AS urbanicity
-  
-	, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
-  	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
-  , ntl_current.ts_tsmart_partisan_score AS democratic_support_score
-  	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
-  , ntl_current.ts_tsmart_biden_support_score AS biden_support_score
-  	-- ^A higher score predicts a higher likelihood that a person will support Joe Biden in the 2020 general election.
-  , ntl_current.ts_tsmart_trump_defector_score AS trump_defector_score
-  	-- ^A higher score indicates a higher likelihood that a person was once, but no longer is, a supporter of President Trump. 
-  , ntl_current.ts_tsmart_activist_score AS activist_score
-  	-- ^A higher score predicts a higher likelihood that the individual is an activist.
-  , CASE
-    	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
-        	AND ts_tsmart_catholic_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
-          AND ts_tsmart_catholic_raw_score >= ts_tsmart_mormon_raw_score
-          AND ts_tsmart_catholic_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Catholic'
-          ELSE CASE
-       WHEN ts_tsmart_evangelical_raw_score >= ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_evangelical_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_jewish_raw_score
-          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_mormon_raw_score
-          AND ts_tsmart_evangelical_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Evangelical'
-          ELSE CASE
-       WHEN ts_tsmart_otherchristian_raw_score >= ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_jewish_raw_score
-          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_mormon_raw_score
-          AND ts_tsmart_otherchristian_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Other Christian'
-          ELSE CASE
-       WHEN ts_tsmart_jewish_raw_score >= ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_jewish_raw_score >= ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_jewish_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_jewish_raw_score >= ts_tsmart_mormon_raw_score
-          AND ts_tsmart_jewish_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Jewish'
-          ELSE CASE
-       WHEN ts_tsmart_mormon_raw_score >= ts_tsmart_catholic_raw_score
-       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_evangelical_raw_score
-      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_otherchristian_raw_score
-       		AND ts_tsmart_mormon_raw_score >= ts_tsmart_jewish_raw_score
-      		AND ts_tsmart_mormon_raw_score >= ts_tsmart_non_religious_raw_score
-          THEN 'Mormon'
-        ELSE CASE
-       WHEN ts_tsmart_non_religious_raw_score >= ts_tsmart_catholic_raw_score
-      	 	AND ts_tsmart_non_religious_raw_score >= ts_tsmart_evangelical_raw_score
-          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_otherchristian_raw_score
-          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_jewish_raw_score
-          AND ts_tsmart_non_religious_raw_score >= ts_tsmart_mormon_raw_score
-          THEN 'Non-Religious'
-        ELSE 'Unknown'
-        END
-        END
-        END
-        END
-        END
-     END AS religion_highest_score
-  , CASE
-  			WHEN religion_highest_score = 'Catholic' THEN ts_tsmart_catholic_raw_score
-        WHEN religion_highest_score = 'Evangelical' THEN ts_tsmart_evangelical_raw_score
-        WHEN religion_highest_score = 'Other Christian' THEN ts_tsmart_otherchristian_raw_score
-        WHEN religion_highest_score = 'Non-Christian' THEN ts_tsmart_nonchristian_raw_score
-        WHEN religion_highest_score = 'Jewish' THEN ts_tsmart_jewish_raw_score
-        WHEN religion_highest_score = 'Mormon' THEN ts_tsmart_mormon_raw_score
-        WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
-     	 ELSE NULL
-		 END AS religion_score_number
-   
-  , ntl_current.ts_tsmart_minimum_wage_score AS minimum_wage_score
-  	-- ^A higher score indicates a higher likelihood that a person supports raising the minimum wage to $15 or more
-  , ntl_current.ts_tsmart_working_class_score AS working_class_score
-  	-- ^A higher score indicates a higher likelihood that a person is working class, as opposed to professional or business class (and whose occupation does not require protective clothing).
-  , ntl_current.ts_tsmart_recession_sensitivity_score AS pandemic_financial_hardship_score
-  	-- ^A higher score indicates individuals who felt most at-risk of financial hardship during the onset of the COVID-19 outbreak.
-  
-  , ntl_current.ts_tsmart_veteran_score AS veteran_score
-  	-- ^A higher score indicates a higher likelihood that a person is a military veteran or an active service member.
-  , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
-  	-- ^The model was built off questions pertaining to black work ethic, historical discrimination, crime, and black protest. The score ranges from 0-100, with 0 meaning an individual is not at all racially resentful, and 100 meaning an individual is extremely racially resentful.
-  , ntl_current.tmc_white_antiblack_resentment AS white_antiblack_resentment
-  	-- ^Higher scores corresponding to higher likelihood of resentment among white people
-  , ntl_current.ts_tsmart_cannabis_legal_support_score AS cannabis_legal_support_score
-  	-- ^A higher score indicates a higher likelihood that person supports the legalization of cannabis.
-  , ntl_current.ts_tsmart_prochoice_score AS prochoice_score
-  	-- ^A higher score indicates a higher likelihood to support abortion rights.
-  , ntl_current.predictwise_healthcare_women_score AS healthcare_women_score
-  	-- ^A higher score indicates a higher likelihood that a person supports women’s healthcare and reproductive rights, based on attitudes towards womens’ and girls’ healthcare, access to birth control without parental consent, comprehensive sexual education, and access to abortion in different circumstances.
-  	-- ^Predictwise score
-  , ntl_current.ts_tsmart_path_to_citizen_score AS path_to_citizen_score
-  	-- ^A higher score indicates a higher likelihood that a person supports a path to citizenship immigration law.
-  , ROUND (ntl_current.pathway_citizenship_score, 1) AS pathway_citizenship_score_2
-  	-- ^A higher score indicates a higher likelihood that a person supports a path to citizenship for undocumented immigrants.
-  , ROUND (ntl_current.abolish_ice_score, 1) AS abolish_ice_score
-  	-- ^A higher score indicates a higher likelihood that a person opposes the existence of ICE.
-  , ROUND (ntl_current.medicaid_access_score, 1) AS undocumented_medicaid_access_score
-  	-- ^A higher score indicates a higher likelihood that a person supports undocumented immigrants qualifying for Medicaid.
-  , ntl_current.ts_tsmart_college_funding_score AS college_funding_score
-  	-- ^A higher score indicates a higher likelihood that a person supports raising government spending on student aid to make college more affordable.
-  , ntl_current.ts_tsmart_climate_change_score AS climate_change_score
-  	-- ^A higher score indicates a higher likelihood that a person supports stricter laws and regulations to address climate change.
-  , ntl_current.predictwise_environmentalism_score AS environmentalism_score
-  	-- ^A higher score indicates a higher likelihood that a person supports protecting the environment, based on attitudes towards renewable energy, climate change, and oil and gas exploration.
-  	-- ^Predictwise score
-  , ntl_current.ts_tsmart_gun_control_score AS gun_control_score
-  	-- ^A higher score indicates a higher likelihood that a person supports stricter gun control laws
-  , ntl_current.ts_tsmart_gunowner_score AS gunowner_score
-  	-- ^A higher score indicates a higher likelihood that a person is a gunowner.
-  , ntl_current.predictwise_criminal_justice_reform_score AS criminal_justice_reform_score
-  	-- ^A higher score indicates a higher likelihood that a person is supportive of government efforts to address criminal justice.
-  	-- ^Predictwise score
-  
-  , ntl_current.vb_purely_social_networker_demi_decile AS purely_social_network_score
-  	-- ^Such as Facebook. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_personal_voice_social_networker_demi_decile AS personal_voice_social_network_score
-  	-- ^Such as Twitter. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_professional_social_networker_demi_decile AS professional_social_network_score
-  	-- ^Such as LinkedIn. 1 represents those most likely and 20 represents those least likely.
-      
-FROM dedup1
-
--- Inner join since we only want members included in the voter file.
-INNER JOIN ts.ntl_current
- 	ON ntl_current.vb_voterbase_id = dedup1.voterbase_id
+  *
+  , CASE WHEN rfm_regions.end_date IS NULL THEN ((SELECT GETDATE ()))
+  		ELSE rfm_regions.end_date
+  	END AS end_date_dailyupdate
+FROM coc_reporting.rfm_regions
 )
 
 
 SELECT 
-  vf_join.*
-  , ea_mob_eventattendance.*
+	base.*
+  , NVL(temp_region.region, 'Unknown') AS rfm_region
+  		-- ^Simplifying this field. Formally referenced location of the event as "event_region". Now only reflects the region of the event owner, as defined by how staff are organized.
+  --, event_attendees_ally_flag.allies_event_attendee
+  , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
+  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+FROM base
 
-FROM vf_join
+/*LEFT JOIN coc_reporting.event_attendees_ally_flag
+	ON base.attendee_id = event_attendees_ally_flag.combined_attendee_id*/
+-- Joining to CTE with RFM Regions. Event date is within the field manager's dates for the region.
+LEFT JOIN temp_region
+  ON base.event_owner = temp_region.event_owner
+  AND base.event_date >= temp_region.start_date
+  AND base.event_date < temp_region.end_date_dailyupdate
 
--- Joining to table of event and attendance information from Every Action and Mobilize. Also includes fields for event_region, ally flag, and latest_attendance_rank.
----- https://platform.civisanalytics.com/spa/#/scripts/sql/103290282
----- These tables are already filtering for participations with role = 'attendee', participation = 'completed', event date since Sept 2020 , event not cancelled.
--- Inner Join because of primary keys, all records from Every Action will join but some records from Mobilize will be dudplicates. Above in ea_mob_table, user ids from EA and Mob were already consolidated into attendee_id. Therefore, using an Inner Join will keep all records where the primary_key matches to an attendee_id, but will exclude primary keys from Mobilize that are duplicates.
-INNER JOIN coc_reporting.ea_mob_eventattendance
-  ON ea_mob_eventattendance.attendee_id = vf_join.primary_key
- 
 ;
 
-
 -- Grant access:
-GRANT SELECT ON coc_reporting.vf_attendee_demographics TO GROUP coc;
-GRANT ALL ON coc_reporting.vf_attendee_demographics TO jharris1;
+GRANT SELECT ON coc_reporting.ea_mob_eventattendance TO GROUP coc;
+GRANT ALL ON coc_reporting.ea_mob_eventattendance TO jharris1;
