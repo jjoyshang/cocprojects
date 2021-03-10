@@ -1,0 +1,46 @@
+/*DROP TABLE IF EXISTS coc_reporting.;
+CREATE TABLE coc_reporting.AS*/
+
+
+WITH ea_base AS (
+SELECT 
+  coc_eventsignups.vanid
+  , LEFT (coc_eventshifts.datetimeoffsetbegin, CHARINDEX(' ', coc_events.dateoffsetbegin) -1) AS join_date
+      -- ^For the join date, using the shift time rather than event time. One event may have multiple shifts on different days. The shift time is more accurate for the time the member actually attended an event.
+      -- ^Reformats to only include the date, not time of event
+  , ROW_NUMBER () OVER (PARTITION BY coc_eventsignups.vanid ORDER BY join_date ASC) AS date_rank
+    -- ^Field to rank each person by the different dates they attended events on. Will be deduping below for first event per person.
+FROM tmc_van.coc_events
+LEFT JOIN tmc_van.coc_eventsignups
+	ON coc_events.eventid = coc_eventsignups.eventid
+LEFT JOIN tmc_van.coc_eventsignupsstatuses
+ 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
+LEFT JOIN tmc_van.coc_eventshifts
+  ON coc_eventsignups.eventshiftid = coc_eventshifts.eventshiftid
+WHERE
+	coc_eventsignups.eventrolename = 'Attendee'
+    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
+  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
+    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
+  AND coc_events.eventname NOT LIKE '%Cancelled%'
+    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
+)
+
+, ea_clean AS (
+SELECT
+  vanid
+  , join_date
+FROM ea_base
+WHERE date_rank = 1
+)
+
+
+, 
+  
+  
+
+;
+
+-- Grant access:
+/*GRANT SELECT ON coc_reporting. TO GROUP coc;
+GRANT ALL ON coc_reporting. TO jharris1;*/
