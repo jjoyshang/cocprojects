@@ -3,6 +3,8 @@
 -- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
 -- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
 
+GRANT SELECT ON coc_reporting.rfm_regions TO GROUP coc;
+GRANT ALL ON coc_reporting.rfm_regions TO jharris1;
 
 DROP TABLE IF EXISTS coc_reporting.ea_mob_eventattendance;
 CREATE TABLE coc_reporting.ea_mob_eventattendance AS
