@@ -71,7 +71,7 @@ WHERE rank_person_id = 1
 
 , ap_phone AS (
 SELECT
-  ap_base.*
+  ap_email.*
   , coc_phones.phone_number
   , ROW_NUMBER () OVER (PARTITION BY ap_email.person_id, ap_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
 FROM ap_email
@@ -149,7 +149,6 @@ LEFT JOIN ts.ntl_current
 
 SELECT
   ap_clean.*
-  , vb_phone
   , vb_phone
   , vb_address
   , vb_city
