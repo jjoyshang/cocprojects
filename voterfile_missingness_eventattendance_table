@@ -9,7 +9,7 @@ SELECT
       /* ^For the join date, using the shift time rather than event time. One event may have multiple shifts on 
       different days. The shift time is more accurate for the time the member actually attended an event. */
       -- ^Reformats to only include the date, not time of event
-  , ROW_NUMBER () OVER (PARTITION BY coc_eventsignups.vanid ORDER BY join_date ASC) AS date_rank
+  , ROW_NUMBER () OVER (PARTITION BY coc_eventsignups.vanid ORDER BY join_date ASC NULLS LAST) AS date_rank
     /* ^Field to rank each person by the different dates they attended events on. Will be deduping below for 
     first event per person. */
 
@@ -38,7 +38,7 @@ SELECT
   ea.*
   , coc_person_fields.person_id
   , coc_identities.voterbase_id
-  , CASE WHEN coc_person_fields.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_person_fields.person_id 
+  , CASE WHEN coc_person_fields.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY ea.vanid
           ORDER BY NVL(coc_identities.updated_at, NULL) 
         DESC NULLS LAST))
 			ELSE 1
@@ -102,6 +102,15 @@ SELECT
   vanid AS van_id
   , person_id
   , voterbase_id
+    /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is 
+  because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for 
+  those hundreds of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining 
+  to the voterfile should filter for the latest voterbase_id, to only include one record for each person in the 
+  voter file (rather than potentially having 300 records of the same person). */
+  , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
+      ELSE NULL
+      END AS latest_voterbase_id_match 
+      -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
   , join_date AS van_join_date
   , email AS ap_email
   , phone_number AS ap_phone
@@ -110,15 +119,6 @@ SELECT
   , city AS ap_city
   , state AS ap_state
   , zip_code AS ap_zip
-  /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is 
-  because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for 
-  those hundreds of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining 
-  to the voterfile should filter for the latest voterbase_id, to only include one record for each person in the 
-  voter file (rather than potentially having 300 records of the same person). */
-  , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
-      ELSE 1
-      END AS latest_voterbase_id_match 
-      -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
 FROM ap_address
 WHERE rank_addresses = 1
 )
