@@ -38,7 +38,7 @@ SELECT
   ea.*
   , coc_person_fields.person_id
   , coc_identities.voterbase_id
-  , CASE WHEN person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_person_fields.person_id 
+  , CASE WHEN coc_person_fields.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_person_fields.person_id 
           ORDER BY NVL(coc_identities.updated_at, NULL) 
         DESC NULLS LAST))
 			ELSE 1
@@ -71,7 +71,7 @@ WHERE rank_person_id = 1
 
 , ap_phone AS (
 SELECT
-  ap_base_email.*
+  ap_base.*
   , coc_phones.phone_number
   , ROW_NUMBER () OVER (PARTITION BY ap_email.person_id, ap_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
 FROM ap_email
