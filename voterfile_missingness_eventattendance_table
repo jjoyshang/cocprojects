@@ -1,15 +1,17 @@
-/*DROP TABLE IF EXISTS coc_reporting.;
-CREATE TABLE coc_reporting.AS*/
+DROP TABLE IF EXISTS coc_reporting.eventattendance_voterfile;
+CREATE TABLE coc_reporting.eventattendance_voterfile AS
 
 
 WITH ea AS (
 SELECT 
   coc_eventsignups.vanid
   , LEFT (coc_eventshifts.datetimeoffsetbegin, CHARINDEX(' ', coc_events.dateoffsetbegin) -1) AS join_date
-      -- ^For the join date, using the shift time rather than event time. One event may have multiple shifts on different days. The shift time is more accurate for the time the member actually attended an event.
+      /* ^For the join date, using the shift time rather than event time. One event may have multiple shifts on 
+      different days. The shift time is more accurate for the time the member actually attended an event. */
       -- ^Reformats to only include the date, not time of event
   , ROW_NUMBER () OVER (PARTITION BY coc_eventsignups.vanid ORDER BY join_date ASC) AS date_rank
-    -- ^Field to rank each person by the different dates they attended events on. Will be deduping below for first event per person.
+    /* ^Field to rank each person by the different dates they attended events on. Will be deduping below for 
+    first event per person. */
 
 FROM tmc_van.coc_events
 LEFT JOIN tmc_van.coc_eventsignups
@@ -23,32 +25,47 @@ WHERE
 	coc_eventsignups.eventrolename = 'Attendee'
     -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
   AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
-    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
+    /* ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include 
+    all statuses, including Scheduled and No-Show etc. */
   AND coc_events.eventname NOT LIKE '%Cancelled%'
-    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
+    /* ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. 
+    However, this will at least remove events where the event name includes 'Cancelled'. */
 )
 
 
--- !Multiple person ids join to one van id, and also multiple van ids join to one person id. Should I only include the most recent person id match? Or retain all?
-, ap_base_email AS (
+, ap_base AS (
 SELECT
   ea.*
   , coc_person_fields.person_id
   , coc_identities.voterbase_id
-  , coc_identities.updated_at AS identities_updated_at-- For marking latest person id and voterabse id match below.
-  , coc_emails.email
-  , ROW_NUMBER () OVER (PARTITION BY coc_identities.person_id, ea.vanid ORDER BY coc_emails.updated_at DESC) AS rank_emails
+  , CASE WHEN person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_person_fields.person_id 
+          ORDER BY NVL(coc_identities.updated_at, NULL) 
+        DESC NULLS LAST))
+			ELSE 1
+		  END AS rank_person_id 
+		  -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
+  , coc_identities.updated_at AS identities_updated_at-- For marking latest voterabse id match below.
 
 FROM ea
 LEFT JOIN tmc_activist_pool.coc_person_fields
   ON coc_person_fields.primary_key = ea.vanid
 LEFT JOIN tmc_activist_pool.coc_identities
   ON coc_identities.person_id = coc_person_fields.person_id
-LEFT JOIN tmc_activist_pool.coc_emails
-  ON coc_emails.person_id = coc_person_fields.person_id
-
+  
 WHERE coc_person_fields.vendor = 'every_action'
   AND date_rank = 1
+)
+
+
+, ap_email AS (
+SELECT
+  ap_base.*
+  , coc_emails.email
+  , ROW_NUMBER () OVER (PARTITION BY ap_base.person_id, ap_base.vanid ORDER BY coc_emails.updated_at DESC) AS rank_emails
+FROM ap_base
+LEFT JOIN tmc_activist_pool.coc_emails
+  ON coc_emails.person_id = ap_base.person_id
+WHERE rank_person_id = 1
 )
 
 
@@ -56,10 +73,10 @@ WHERE coc_person_fields.vendor = 'every_action'
 SELECT
   ap_base_email.*
   , coc_phones.phone_number
-  , ROW_NUMBER () OVER (PARTITION BY ap_base_email.person_id, ap_base_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
-FROM ap_base_email
+  , ROW_NUMBER () OVER (PARTITION BY ap_email.person_id, ap_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
+FROM ap_email
 LEFT JOIN tmc_activist_pool.coc_phones
-  ON coc_phones.person_id = ap_base_email.person_id
+  ON coc_phones.person_id = ap_email.person_id
 WHERE rank_emails = 1
 )
 
@@ -85,45 +102,71 @@ SELECT
   vanid AS van_id
   , person_id
   , voterbase_id
-  , join_date
-  , email
-  , phone_number
-  , address1
-  , address2
-  , city
-  , state
-  , zip_code
-  , CASE WHEN person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY person_id ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
-			ELSE 1
-		  END AS latest_person_id_match -- Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
-  --I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for those hundreds of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining to the voterfile should filter for the latest voterbase_id, to only include one record for each person in the voter file (rather than potentially having 300 records of the same person).
+  , join_date AS van_join_date
+  , email AS ap_email
+  , phone_number AS ap_phone
+  , address1 AS ap_address1
+  , address2 AS ap_address2
+  , city AS ap_city
+  , state AS ap_state
+  , zip_code AS ap_zip
+  /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is 
+  because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for 
+  those hundreds of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining 
+  to the voterfile should filter for the latest voterbase_id, to only include one record for each person in the 
+  voter file (rather than potentially having 300 records of the same person). */
   , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
       ELSE 1
-      END AS latest_voterbase_id_match -- Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
+      END AS latest_voterbase_id_match 
+      -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
 FROM ap_address
 WHERE rank_addresses = 1
 )
 
 
-
 , vf AS(
 SELECT
-  vanid
-  , 
+  van_id
+  , voterbase_id
+  , vb_voterbase_phone AS vb_phone
+  , vb_tsmart_full_address AS vb_address
+  , vb_tsmart_city AS vb_city
+  , vb_tsmart_state AS vb_state
+  , vb_tsmart_zip AS vb_zip
+  , vb_voterbase_age AS vb_age
+  , vb_voterbase_gender AS vb_gender
+  , vb_voterbase_race AS vb_race
+  , vb_vf_party AS vb_party
 FROM ap_clean
 LEFT JOIN ts.ntl_current
 	ON ntl_current.vb_voterbase_id = ap_clean.voterbase_id
-
-WHERE latest_voterbase_id_match = 1
-  -- Filtering to only match to latest matched voterbase_id from the Activist Pool. This is because one voterbase_id may be matched to hundreds of person_ids.
+	AND latest_voterbase_id_match = 1
+	  /* ^ Filtering to only match to latest matched voterbase_id from the Activist Pool. 
+	  This is because one voterbase_id may be matched to hundreds of person_ids. */
+	AND ap_clean.voterbase_id IS NOT NULL
 )
   
 
-
-ORDER BY person_id DESC LIMIT 2000
-
+SELECT
+  ap_clean.*
+  , vb_phone
+  , vb_phone
+  , vb_address
+  , vb_city
+  , vb_state
+  , vb_zip
+  , vb_age
+  , vb_gender
+  , vb_race
+  , vb_party
+FROM ap_clean
+LEFT JOIN vf
+  ON vf.van_id = ap_clean.van_id
+  AND vf.voterbase_id = ap_clean.voterbase_id
+  AND ap_clean.latest_voterbase_id_match = 1
+  
 ;
 
 -- Grant access:
-/*GRANT SELECT ON coc_reporting. TO GROUP coc;
-GRANT ALL ON coc_reporting. TO jharris1;*/
+GRANT SELECT ON coc_reporting.eventattendance_voterfile TO GROUP coc;
+GRANT ALL ON coc_reporting.eventattendance_voterfile TO jharris1;
