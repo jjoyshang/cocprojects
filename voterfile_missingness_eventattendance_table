@@ -1,3 +1,12 @@
+/*Generate a table with all event attendees from Every Action and connect people to their record in the voterfile, if we
+have a match on them.
+
+This table only connects the voterfile fields if it is the latest voterfile match (where a voterbase id may be matched to
+different person ids over time as we get more info on people) but keeps all van ids from Every Action
+
+This table is structured to eliminate duplicate van ids and person ids, leading to many CTEs.*/
+
+
 DROP TABLE IF EXISTS coc_reporting.eventattendance_voterfile;
 CREATE TABLE coc_reporting.eventattendance_voterfile AS
 
@@ -33,27 +42,33 @@ WHERE
 )
 
 
-, ap_base AS (
+, ap AS(
 SELECT
   ea.*
   , coc_person_fields.person_id
-  , coc_identities.voterbase_id
   , CASE WHEN coc_person_fields.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY ea.vanid
-          ORDER BY NVL(coc_identities.updated_at, NULL) 
+          ORDER BY NVL(coc_person_fields.updated_at, NULL) 
         DESC NULLS LAST))
 			ELSE 1
 		  END AS rank_person_id 
 		  -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
-  , coc_identities.updated_at AS identities_updated_at-- For marking latest voterabse id match below.
-
 FROM ea
 LEFT JOIN tmc_activist_pool.coc_person_fields
   ON coc_person_fields.primary_key = ea.vanid
+  AND coc_person_fields.vendor = 'every_action'
+WHERE date_rank = 1
+)
+
+
+, ap_base AS (
+SELECT
+  ap.*
+  , coc_identities.voterbase_id
+  , coc_identities.updated_at AS identities_updated_at-- For marking latest voterabse id match below.
+FROM ap
 LEFT JOIN tmc_activist_pool.coc_identities
-  ON coc_identities.person_id = coc_person_fields.person_id
-  
-WHERE coc_person_fields.vendor = 'every_action'
-  AND date_rank = 1
+  ON coc_identities.person_id = ap.person_id
+WHERE rank_person_id = 1
 )
 
 
@@ -61,11 +76,10 @@ WHERE coc_person_fields.vendor = 'every_action'
 SELECT
   ap_base.*
   , coc_emails.email
-  , ROW_NUMBER () OVER (PARTITION BY ap_base.person_id, ap_base.vanid ORDER BY coc_emails.updated_at DESC) AS rank_emails
+  , ROW_NUMBER () OVER (PARTITION BY ap_base.vanid ORDER BY coc_emails.updated_at DESC) AS rank_emails
 FROM ap_base
 LEFT JOIN tmc_activist_pool.coc_emails
   ON coc_emails.person_id = ap_base.person_id
-WHERE rank_person_id = 1
 )
 
 
@@ -73,7 +87,7 @@ WHERE rank_person_id = 1
 SELECT
   ap_email.*
   , coc_phones.phone_number
-  , ROW_NUMBER () OVER (PARTITION BY ap_email.person_id, ap_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
+  , ROW_NUMBER () OVER (PARTITION BY ap_email.vanid ORDER BY coc_phones.updated_at DESC) AS rank_phones
 FROM ap_email
 LEFT JOIN tmc_activist_pool.coc_phones
   ON coc_phones.person_id = ap_email.person_id
@@ -89,7 +103,7 @@ SELECT
   , coc_addresses.city
   , coc_addresses.state
   , coc_addresses.zip_code
-  , ROW_NUMBER () OVER (PARTITION BY ap_phone.person_id, ap_phone.vanid ORDER BY coc_addresses.updated_at DESC) AS rank_addresses
+  , ROW_NUMBER () OVER (PARTITION BY ap_phone.vanid ORDER BY coc_addresses.updated_at DESC) AS rank_addresses
 FROM ap_phone
 LEFT JOIN tmc_activist_pool.coc_addresses
   ON coc_addresses.person_id = ap_phone.person_id
@@ -138,12 +152,11 @@ SELECT
   , vb_voterbase_race AS vb_race
   , vb_vf_party AS vb_party
 FROM ap_clean
-LEFT JOIN ts.ntl_current
+INNER JOIN ts.ntl_current
 	ON ntl_current.vb_voterbase_id = ap_clean.voterbase_id
 	AND latest_voterbase_id_match = 1
 	  /* ^ Filtering to only match to latest matched voterbase_id from the Activist Pool. 
 	  This is because one voterbase_id may be matched to hundreds of person_ids. */
-	AND ap_clean.voterbase_id IS NOT NULL
 )
   
 
