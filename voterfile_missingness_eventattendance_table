@@ -3,13 +3,19 @@
 This table only connects the voterfile fields if it is the latest voterfile match (where a voterbase id may be matched to
 different person ids over time as we get more info on people) but keeps all van ids from Every Action
 
-This table is structured to eliminate duplicate van ids and person ids, which is why there are so many CTEs.*/
+This table is structured to eliminate duplicate van ids, which is why there are so many CTEs.
+
+In the final select, fields that begin with 'ap_' are from the Activist Pool, fields that begin with 'vb_' are from the
+voterbase.*/
 
 
 DROP TABLE IF EXISTS coc_reporting.eventattendance_voterfile;
 CREATE TABLE coc_reporting.eventattendance_voterfile AS
 
 
+/* Bring in all event attendees from Every Action, filtering for only people who where an Attendee and Completed their shift.
+Includes date_rank field to dedup the date of a persons first event, to get their join date.
+*/
 WITH ea AS (
 SELECT 
   coc_eventsignups.vanid
@@ -41,6 +47,9 @@ WHERE
 )
 
 
+/*Connect van ids from Every Action to the Activist Pool through coc_person_fields. It is possible for one van id to
+be matched to multiple person ids. Because of this, I include the rank_person_id field, to dedup on the most recent
+person_id. */
 , ap AS(
 SELECT
   ea.*
@@ -55,10 +64,13 @@ FROM ea
 LEFT JOIN tmc_activist_pool.coc_person_fields
   ON coc_person_fields.primary_key = ea.vanid
   AND coc_person_fields.vendor = 'every_action'
-WHERE date_rank = 1
+WHERE date_rank = 1 -- Dedup join_date from ea CTE above.
 )
 
 
+/*Connect person ids to voterbase ids through the Activist Pool. One voterbase id may have been matched to 300+ 
+person ids. Therefore, I will not be deduping person ids by voterbase ids. Instead, in the ap_clean CTE below I
+flag the most recent voterbase id match for joining to the voterfile.*/
 , ap_base AS (
 SELECT
   ap.*
@@ -67,10 +79,11 @@ SELECT
 FROM ap
 LEFT JOIN tmc_activist_pool.coc_identities
   ON coc_identities.person_id = ap.person_id
-WHERE rank_person_id = 1
+WHERE rank_person_id = 1 -- Dedup person id match from ap CTE above.
 )
 
 
+/*Bring in email address. Includes rank_emails field to dedup on latest email match in CTE below.*/
 , ap_email AS (
 SELECT
   ap_base.*
@@ -82,6 +95,7 @@ LEFT JOIN tmc_activist_pool.coc_emails
 )
 
 
+/*Bring in phone. Includes rank_phones field to dedup on latest phone match in CTE below.*/
 , ap_phone AS (
 SELECT
   ap_email.*
@@ -90,10 +104,11 @@ SELECT
 FROM ap_email
 LEFT JOIN tmc_activist_pool.coc_phones
   ON coc_phones.person_id = ap_email.person_id
-WHERE rank_emails = 1
+WHERE rank_emails = 1 -- Dedup emails from ap_email CTE above.
 )
 
 
+/*Bring in address. Includes rank_eaddresses field to dedup on latest phone match in CTE below.*/
 , ap_address AS (
 SELECT
   ap_phone.*
@@ -106,10 +121,14 @@ SELECT
 FROM ap_phone
 LEFT JOIN tmc_activist_pool.coc_addresses
   ON coc_addresses.person_id = ap_phone.person_id
-WHERE rank_phones = 1
+WHERE rank_phones = 1 -- Dedup phones from ap_phone CTE above.
 )
 
 
+
+/*Selecting final fields that I want from the Activist Pool and renaming. Includes latest_voterbase_id_match , 
+which flags the most recent voterbase match. I will use this in the vf CTE, bringing in voterfile information,
+as a filter. */
 , ap_clean AS(
 SELECT
   vanid AS van_id
@@ -117,10 +136,11 @@ SELECT
   , voterbase_id
     /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is 
   because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for 
-  those hundreds of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining 
-  to the voterfile should filter for the latest voterbase_id, to only include one record for each person in the 
-  voter file (rather than potentially having 300 records of the same person). */
-  , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
+  those hundreds of people. INSTEAD, any Selects that are joining  to the voterfile should filter for the 
+  latest voterbase_id, to only include one record for each person in the voter file (rather than potentially 
+  having 300 records of the same person). */
+  , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id 
+        ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
       ELSE NULL
       END AS latest_voterbase_id_match 
       -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
@@ -133,10 +153,12 @@ SELECT
   , state AS ap_state
   , zip_code AS ap_zip
 FROM ap_address
-WHERE rank_addresses = 1
+WHERE rank_addresses = 1 -- Dedup addresses from ap_address CTE above.
 )
 
 
+/*Joining to the voterfile. Bringing in desired fields and renaming.
+The van_id is included for most accurate joining in the final select.*/
 , vf AS(
 SELECT
   van_id
@@ -160,6 +182,8 @@ INNER JOIN ts.ntl_current
 )
   
 
+
+/*All final fields that I want. Joining fields from the Activist Pool to the voterfile.*/
 SELECT
   ap_clean.*
   , vb_phone_landline
