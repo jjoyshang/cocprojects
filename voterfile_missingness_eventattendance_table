@@ -1,10 +1,9 @@
-/*Generate a table with all event attendees from Every Action and connect people to their record in the voterfile, if we
-have a match on them.
+/*Generate a table with all event attendees from Every Action and connect people to their record in the voterfile.
 
 This table only connects the voterfile fields if it is the latest voterfile match (where a voterbase id may be matched to
 different person ids over time as we get more info on people) but keeps all van ids from Every Action
 
-This table is structured to eliminate duplicate van ids and person ids, leading to many CTEs.*/
+This table is structured to eliminate duplicate van ids and person ids, which is why there are so many CTEs.*/
 
 
 DROP TABLE IF EXISTS coc_reporting.eventattendance_voterfile;
@@ -142,7 +141,8 @@ WHERE rank_addresses = 1
 SELECT
   van_id
   , voterbase_id
-  , vb_voterbase_phone AS vb_phone
+  , tmc_landline_phone AS vb_phone_landline
+  , tmc_cell_phone AS vb_phone_cell
   , vb_tsmart_full_address AS vb_address
   , vb_tsmart_city AS vb_city
   , vb_tsmart_state AS vb_state
@@ -162,7 +162,8 @@ INNER JOIN ts.ntl_current
 
 SELECT
   ap_clean.*
-  , vb_phone
+  , vb_phone_landline
+  , vb_phone_cell
   , vb_address
   , vb_city
   , vb_state
