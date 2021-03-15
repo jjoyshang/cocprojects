@@ -1,0 +1,159 @@
+DROP TABLE IF EXISTS coc_reporting.actionkit_voterfile;
+CREATE TABLE coc_reporting.actionkit_voterfile AS
+
+
+/*core_user table has no dupes*/
+WITH ak AS (
+SELECT
+	core_user.id AS ak_id
+	, LEFT (created_at, CHARINDEX(' ', created_at) -1) AS join_date
+    -- ^Reformats to only include the date, not time.
+  , subscription_status
+FROM coc_ak.core_user
+
+
+--WHERE join_date < '2021-01-01' AND join_date >= '2020-01-01'
+)
+
+
+/*Not seeing any dupes from ak_id to person_id*/
+, ap_base AS (
+SELECT
+  ak.*
+  , coc_person_fields.person_id
+  , coc_identities.voterbase_id
+  , coc_identities.updated_at AS identities_updated_at -- For marking latest voterabse id match below.
+FROM ak
+LEFT JOIN tmc_activist_pool.coc_person_fields
+	ON coc_person_fields.primary_key = ak.ak_id
+  AND coc_person_fields.vendor = 'action_kit'
+LEFT JOIN tmc_activist_pool.coc_identities
+  ON coc_identities.person_id = coc_person_fields.person_id
+)
+
+
+/*Bring in email address. Includes rank_emails field to dedup on latest email match in CTE below.*/
+, ap_email AS (
+SELECT
+  ap_base.*
+  , coc_emails.email
+  , ROW_NUMBER () OVER (PARTITION BY ap_base.ak_id ORDER BY coc_emails.updated_at DESC) AS rank_emails
+FROM ap_base
+LEFT JOIN tmc_activist_pool.coc_emails
+  ON coc_emails.person_id = ap_base.person_id
+)
+
+
+/*Bring in phone. Includes rank_phones field to dedup on latest phone match in CTE below.*/
+, ap_phone AS (
+SELECT
+  ap_email.*
+  , coc_phones.phone_number
+  , ROW_NUMBER () OVER (PARTITION BY ap_email.ak_id ORDER BY coc_phones.updated_at DESC) AS rank_phones
+FROM ap_email
+LEFT JOIN tmc_activist_pool.coc_phones
+  ON coc_phones.person_id = ap_email.person_id
+WHERE rank_emails = 1 -- Dedup emails from ap_email CTE above.
+)
+
+
+/*Bring in address. Includes rank_eaddresses field to dedup on latest phone match in CTE below.*/
+, ap_address AS (
+SELECT
+  ap_phone.*
+  , coc_addresses.address1
+  , coc_addresses.address2
+  , coc_addresses.city
+  , coc_addresses.state
+  , coc_addresses.zip_code
+  , ROW_NUMBER () OVER (PARTITION BY ap_phone.ak_id ORDER BY coc_addresses.updated_at DESC) AS rank_addresses
+FROM ap_phone
+LEFT JOIN tmc_activist_pool.coc_addresses
+  ON coc_addresses.person_id = ap_phone.person_id
+WHERE rank_phones = 1 -- Dedup phones from ap_phone CTE above.
+)
+
+
+
+/*Selecting final fields that I want from the Activist Pool and renaming. Includes latest_voterbase_id_match , 
+which flags the most recent voterbase match. I will use this in the vf CTE, bringing in voterfile information,
+as a filter. */
+, ap_clean AS(
+SELECT
+  ak_id
+  , person_id
+  , voterbase_id
+    /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is 
+  because TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for 
+  those hundreds of people. INSTEAD, any Selects that are joining  to the voterfile should filter for the 
+  latest voterbase_id, to only include one record for each person in the voter file (rather than potentially 
+  having 300 records of the same person). */
+  , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id 
+        ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
+      ELSE NULL
+      END AS latest_voterbase_id_match 
+      -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
+  , join_date AS ak_join_date
+  , subscription_status AS ak_sub_status
+  , email AS ap_email
+  , phone_number AS ap_phone
+  , address1 AS ap_address1
+  , address2 AS ap_address2
+  , city AS ap_city
+  , state AS ap_state
+  , zip_code AS ap_zip
+FROM ap_address
+WHERE rank_addresses = 1 -- Dedup addresses from ap_address CTE above.
+)
+
+
+/*Joining to the voterfile. Bringing in desired fields and renaming.
+The van_id is included for most accurate joining in the final select.*/
+, vf AS(
+SELECT
+  ak_id
+  , voterbase_id
+  , tmc_landline_phone AS vb_phone_landline
+  , tmc_cell_phone AS vb_phone_cell
+  , vb_tsmart_full_address AS vb_address
+  , vb_tsmart_city AS vb_city
+  , vb_tsmart_state AS vb_state
+  , vb_tsmart_zip AS vb_zip
+  , vb_voterbase_age AS vb_age
+  , vb_voterbase_gender AS vb_gender
+  , vb_voterbase_race AS vb_race
+  , vb_vf_party AS vb_party
+FROM ap_clean
+INNER JOIN ts.ntl_current
+	ON ntl_current.vb_voterbase_id = ap_clean.voterbase_id
+	AND latest_voterbase_id_match = 1
+	  /* ^ Filtering to only match to latest matched voterbase_id from the Activist Pool. 
+	  This is because one voterbase_id may be matched to hundreds of person_ids. */
+)
+  
+
+
+/*All final fields that I want. Joining fields from the Activist Pool to the voterfile.*/
+SELECT
+  ap_clean.*
+  , vb_phone_landline
+  , vb_phone_cell
+  , vb_address
+  , vb_city
+  , vb_state
+  , vb_zip
+  , vb_age
+  , vb_gender
+  , vb_race
+  , vb_party
+FROM ap_clean
+LEFT JOIN vf
+  ON vf.ak_id = ap_clean.ak_id
+  AND vf.voterbase_id = ap_clean.voterbase_id
+  AND ap_clean.latest_voterbase_id_match = 1
+
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.actionkit_voterfile TO GROUP coc;
+GRANT ALL ON coc_reporting.actionkit_voterfile TO jharris1;
