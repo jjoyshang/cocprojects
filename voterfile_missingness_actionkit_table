@@ -1,8 +1,20 @@
+/*Generate a table with all users in ActionKit, our email platform, and connect people to their record in the voterfile.
+
+This table only connects the voterfile fields if it is the latest voterfile match (where a voterbase id may be matched to
+different person ids over time as we get more info on people) but keeps all user ids from ActionKit.
+
+This table is structured to eliminate duplicate ak ids, which is why there are so many CTEs.
+
+In the final select, fields that begin with 'ap_' are from the Activist Pool, fields that begin with 'vb_' are from the
+voterbase.*/
+
+
 DROP TABLE IF EXISTS coc_reporting.actionkit_voterfile;
 CREATE TABLE coc_reporting.actionkit_voterfile AS
 
 
-/*core_user table has no dupes*/
+/*Bringing in all users from Action Kit. I'm including users who are not subscribed, but including a field for 
+subscription status. So in the final table you can look at all users in AK, or just currently subscribed users.*/
 WITH ak AS (
 SELECT
 	core_user.id AS ak_id
@@ -10,13 +22,12 @@ SELECT
     -- ^Reformats to only include the date, not time.
   , subscription_status
 FROM coc_ak.core_user
-
-
---WHERE join_date < '2021-01-01' AND join_date >= '2020-01-01'
 )
 
 
-/*Not seeing any dupes from ak_id to person_id*/
+/*Connect users in AK to the person id and voterbase id in the Activist Pool. One voterbase id may have been 
+matched to 300+ person ids. Therefore, I will not be deduping person ids by voterbase ids. Instead, in the ap_clean 
+CTE below I flag the most recent voterbase id match for joining to the voterfile.*/
 , ap_base AS (
 SELECT
   ak.*
@@ -91,7 +102,7 @@ SELECT
   , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id 
         ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
       ELSE NULL
-      END AS latest_voterbase_id_match 
+      END AS latest_voterbase_match 
       -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
   , join_date AS ak_join_date
   , subscription_status AS ak_sub_status
@@ -126,7 +137,7 @@ SELECT
 FROM ap_clean
 INNER JOIN ts.ntl_current
 	ON ntl_current.vb_voterbase_id = ap_clean.voterbase_id
-	AND latest_voterbase_id_match = 1
+	AND latest_voterbase_match = 1
 	  /* ^ Filtering to only match to latest matched voterbase_id from the Activist Pool. 
 	  This is because one voterbase_id may be matched to hundreds of person_ids. */
 )
@@ -150,7 +161,7 @@ FROM ap_clean
 LEFT JOIN vf
   ON vf.ak_id = ap_clean.ak_id
   AND vf.voterbase_id = ap_clean.voterbase_id
-  AND ap_clean.latest_voterbase_id_match = 1
+  AND ap_clean.latest_voterbase_match = 1
 
 ;
 
