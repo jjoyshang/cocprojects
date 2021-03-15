@@ -1,7 +1,8 @@
-/*Generate a table with all event attendees from Every Action and connect people to their record in the voterfile.
+/*Generate a table with all event attendees from Every Action, our volunteer database where all event information is synced
+to and updated in, and connect people to their record in the voterfile.
 
 This table only connects the voterfile fields if it is the latest voterfile match (where a voterbase id may be matched to
-different person ids over time as we get more info on people) but keeps all van ids from Every Action
+different person ids over time as we get more info on people) but keeps all van ids from Every Action.
 
 This table is structured to eliminate duplicate van ids, which is why there are so many CTEs.
 
@@ -47,39 +48,22 @@ WHERE
 )
 
 
-/*Connect van ids from Every Action to the Activist Pool through coc_person_fields. It is possible for one van id to
-be matched to multiple person ids. Because of this, I include the rank_person_id field, to dedup on the most recent
-person_id. */
-, ap AS(
+/*Connect van ids from Every Action to the person id and voterbase id in the Activist Pool. One voterbase id may have been 
+matched to 300+ person ids. Therefore, I will not be deduping person ids by voterbase ids. Instead, in the ap_clean 
+CTE below I flag the most recent voterbase id match for joining to the voterfile. */
+, ap_base AS (
 SELECT
   ea.*
   , coc_person_fields.person_id
-  , CASE WHEN coc_person_fields.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY ea.vanid
-          ORDER BY NVL(coc_person_fields.updated_at, NULL) 
-        DESC NULLS LAST))
-			ELSE 1
-		  END AS rank_person_id 
-		  -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
+  , coc_identities.voterbase_id
+  , coc_identities.updated_at AS identities_updated_at -- For marking latest voterabse id match below.
 FROM ea
 LEFT JOIN tmc_activist_pool.coc_person_fields
   ON coc_person_fields.primary_key = ea.vanid
   AND coc_person_fields.vendor = 'every_action'
-WHERE date_rank = 1 -- Dedup join_date from ea CTE above.
-)
-
-
-/*Connect person ids to voterbase ids through the Activist Pool. One voterbase id may have been matched to 300+ 
-person ids. Therefore, I will not be deduping person ids by voterbase ids. Instead, in the ap_clean CTE below I
-flag the most recent voterbase id match for joining to the voterfile.*/
-, ap_base AS (
-SELECT
-  ap.*
-  , coc_identities.voterbase_id
-  , coc_identities.updated_at AS identities_updated_at-- For marking latest voterabse id match below.
-FROM ap
 LEFT JOIN tmc_activist_pool.coc_identities
   ON coc_identities.person_id = ap.person_id
-WHERE rank_person_id = 1 -- Dedup person id match from ap CTE above.
+WHERE date_rank = 1 -- Dedup join_date from ea CTE above.
 )
 
 
@@ -142,7 +126,7 @@ SELECT
   , CASE WHEN voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY voterbase_id 
         ORDER BY NVL(identities_updated_at, NULL) DESC NULLS LAST))
       ELSE NULL
-      END AS latest_voterbase_id_match 
+      END AS latest_voterbase_match 
       -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
   , join_date AS van_join_date
   , email AS ap_email
@@ -176,7 +160,7 @@ SELECT
 FROM ap_clean
 INNER JOIN ts.ntl_current
 	ON ntl_current.vb_voterbase_id = ap_clean.voterbase_id
-	AND latest_voterbase_id_match = 1
+	AND latest_voterbase_match = 1
 	  /* ^ Filtering to only match to latest matched voterbase_id from the Activist Pool. 
 	  This is because one voterbase_id may be matched to hundreds of person_ids. */
 )
@@ -200,7 +184,7 @@ FROM ap_clean
 LEFT JOIN vf
   ON vf.van_id = ap_clean.van_id
   AND vf.voterbase_id = ap_clean.voterbase_id
-  AND ap_clean.latest_voterbase_id_match = 1
+  AND ap_clean.latest_voterbase_match = 1
   
 ;
 
