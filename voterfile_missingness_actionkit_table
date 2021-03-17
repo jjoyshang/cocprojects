@@ -20,6 +20,7 @@ SELECT
 	core_user.id AS ak_id
 	, LEFT (created_at, CHARINDEX(' ', created_at) -1) AS join_date
     -- ^Reformats to only include the date, not time.
+  , email as ak_email
   , subscription_status
 FROM coc_ak.core_user
 )
@@ -106,7 +107,8 @@ SELECT
       -- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
   , join_date AS ak_join_date
   , subscription_status AS ak_sub_status
-  , email AS ap_email
+  , ak_email
+  , email as ap_email 
   , phone_number AS ap_phone
   , address1 AS ap_address1
   , address2 AS ap_address2
