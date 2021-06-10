@@ -14,6 +14,11 @@ WITH base AS (SELECT
 	NVL (ea_eventid::varchar, mob_shiftid) AS unique_eventid
   		-- ^Mobilize reference is the shiftid, which is event id plus timeslot id. This is beccause of the weird way Mobilize data is structured, where timeslots are shared across multiple events.
   , NVL (ea_source, mob_source) AS sourceplatform
+  , CASE 
+      WHEN mob_source = 'Mobilize PAC' THEN 'PAC'
+      WHEN mob_source = 'Mobilize C4' THEN 'c3 c4'
+      ELSE NULL
+    END AS entity
   , NVL (ea_date, mob_date::varchar) AS event_date
   , NVL (ea_eventname, mob_eventname) AS event_name
   , NVL (ea_eventtype, mob_eventtype) AS event_type
