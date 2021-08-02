@@ -25,7 +25,7 @@ SELECT
   	, coc_contacts_mym.firstname AS ea_firstname
   	, coc_contacts_mym.lastname AS ea_lastname
   	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
-  	, ROW_NUMBER () OVER (PARTITION BY coc_events.eventid, coc_eventsignups.vanid ORDER BY coc_eventsignupsstatuses.datemodified DESC) as ea_signupdupe
+  	, ROW_NUMBER () OVER (PARTITION BY coc_events.eventid, coc_eventsignups.vanid ORDER BY coc_eventsignupsstatuses.datemodified DESC) AS ea_signupdupe
   	-- ^For deduping eventsignups
 
   -- Included for deduping addresses below
