@@ -22,6 +22,7 @@ SELECT
       , coc_locations.state As ea_eventstate 
         -- ^Included for filtering.
   	, coc_eventsignups.vanid AS ea_attendeesid
+  	, coc_eventsignups.eventrolename AS ea_eventrole
   	, coc_contacts_mym.firstname AS ea_firstname
   	, coc_contacts_mym.lastname AS ea_lastname
   	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
@@ -47,10 +48,7 @@ LEFT JOIN tmc_van.coc_contactsaddresses_mym
 LEFT JOIN tmc_van.coc_contacts_mym
   ON coc_contacts_mym.vanid = coc_eventsignups.vanid
 
-WHERE
-	coc_eventsignups.eventrolename = 'Attendee'
-    -- ^Filter for 'Attendee' only, as opposed to Host or Host Committee.
-  AND coc_eventsignupsstatuses.eventstatusname = 'Completed'
+WHERE coc_eventsignupsstatuses.eventstatusname = 'Completed'
     -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
   AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
     -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
@@ -60,9 +58,24 @@ WHERE
 
 , dedup_signups AS (
 SELECT * 
-  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY address_datemodified DESC) as ea_addressdupe
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY address_datemodified DESC) AS ea_addressdupe
 FROM ea_base
 WHERE ea_signupdupe = 1
+)
+
+
+/* In this CTE we are bringing in email addresses. This is because this version of the code includes people with the 
+'Host Committee' role, to capture volunteer hosts. However, we don't want to include attendees who are actually COC staff.
+In the final select, we will filter on email addresses to take out COC emails. */
+, add_emails AS (
+SELECT dedup_signups.*
+  , email
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY emails.datemodified DESC) AS emaildupe
+    -- ^ For deduping emails by the most recently modified.
+FROM dedup_signups
+LEFT JOIN tmc_van.coc_contactsemails_mym AS emails
+  ON dedup_signups.ea_attendeesid = emails.vanid
+WHERE ea_addressdupe = 1
 )
   
   
@@ -77,14 +90,22 @@ SELECT
   	, ea_eventtype
     , ea_eventstate 
   	, ea_attendeesid
+  	, ea_eventrole
     , ea_firstname
     , ea_lastname
+    , email AS ea_attendeesemail
   	, ea_attendeeszip
   -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
     
-FROM dedup_signups
-WHERE ea_addressdupe = 1
+FROM add_emails
+WHERE emaildupe = 1
+  AND email NOT LIKE '%@colorofchange.org'
+    -- ^ Filter out COC emails, which we assume are staff and not volunteers.
+  AND email NOT IN ('Meleemewilson@gmail.com', 'jvharris02@gmail.com', 'derrickquarles@yahoo.com', 'cdpark81@gmail.com', 'destanien@icloud.com', 'michidael.ceard@gmail.com', 'anazdin+3@gmail.com', 'Salaah.muhammad@gmail.com', 'carolinefreedman@gmail.com', 'Sadie.Dean16@gmail.com', 'candice@1kwomenstrong.com', 'qmalone26@gmail.com', 'naima.savage@gmail.com', 'cgreer@texasaft.org', 'ebony.hardyallen@gmail.com', 'daniesha93@gmail.com', 'passmorejr@gmail.com', 'chuniq.inpower@gmail.com', 'cpetty1992@gmail.com')
+    -- ^ Filter out personal emails of COC staff that we're seeing in EA
+  
 ;
+
 
 -- Grant access:
 GRANT SELECT ON coc_reporting.ea_eventattendance TO GROUP coc;
