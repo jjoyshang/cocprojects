@@ -101,7 +101,7 @@ FROM add_emails
 WHERE emaildupe = 1
   AND email NOT LIKE '%@colorofchange.org'
     -- ^ Filter out COC emails, which we assume are staff and not volunteers.
-  AND email NOT IN ('Meleemewilson@gmail.com', 'jvharris02@gmail.com', 'derrickquarles@yahoo.com', 'cdpark81@gmail.com', 'destanien@icloud.com', 'michidael.ceard@gmail.com', 'anazdin+3@gmail.com', 'Salaah.muhammad@gmail.com', 'carolinefreedman@gmail.com', 'Sadie.Dean16@gmail.com', 'candice@1kwomenstrong.com', 'qmalone26@gmail.com', 'naima.savage@gmail.com', 'cgreer@texasaft.org', 'ebony.hardyallen@gmail.com', 'daniesha93@gmail.com', 'passmorejr@gmail.com', 'chuniq.inpower@gmail.com', 'cpetty1992@gmail.com')
+  AND email NOT IN ('Meleemewilson@gmail.com', 'jvharris02@gmail.com', 'derrickquarles@yahoo.com', 'cdpark81@gmail.com', 'destanien@icloud.com', 'michidael.ceard@gmail.com', 'anazdin+3@gmail.com', 'Salaah.muhammad@gmail.com', 'carolinefreedman@gmail.com', 'Sadie.Dean16@gmail.com', 'candice@1kwomenstrong.com', 'qmalone26@gmail.com', 'naima.savage@gmail.com', 'cgreer@texasaft.org', 'ebony.hardyallen@gmail.com', 'daniesha93@gmail.com', 'passmorejr@gmail.com', 'chuniq.inpower@gmail.com', 'cpetty1992@gmail.com', 'mnblackjoy@gmail.com')
     -- ^ Filter out personal emails of COC staff that we're seeing in EA
   
 ;
