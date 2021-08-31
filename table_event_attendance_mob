@@ -1,4 +1,6 @@
--- * Create a table that pulls together relevant fields from Mobilize for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
+/* Create a table that pulls together relevant fields from Mobilize for a report on event attendance for the field team. 
+The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event 
+name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. */
 ---- Includes records from both Color of Change c4 and Color of Change accounts.
 
 
@@ -72,7 +74,7 @@ FROM mob_deduping
 mob_timeslot AS (
 SELECT 
     mob_dedup.*
-    timeslots.id AS mob_timeslotid
+    , timeslots.id AS mob_timeslotid
         -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
     , timeslots.start_date AS mob_date
     , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY timeslots.modified_date DESC) AS timeslot_dup
@@ -196,10 +198,10 @@ WHERE coc_mobilize_c4_events.created_date BETWEEN '2020-09-01 00:00:00+00' AND (
 ),
 
 
--- This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
+-- This CTE is deduping the duplicates of events in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
 mob_c4_deduping AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY c4_van_moddate DESC) AS c4_van_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid ORDER BY c4_van_moddate DESC) AS c4_van_dup
 FROM mob_c4_base
 WHERE c4_event_dup = 1
 ),
@@ -214,7 +216,7 @@ FROM mob_c4_deduping
 mob_c4_timeslot AS (
 SELECT 
     mob_c4_dedup.*
-    coc_mobilize_c4_timeslots.id AS mob_c4_timeslotid
+    , coc_mobilize_c4_timeslots.id AS mob_c4_timeslotid
       -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
     , coc_mobilize_c4_timeslots.start_date AS mob_c4_date
     , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY coc_mobilize_c4_timeslots.modified_date DESC) AS c4_timeslot_dup
