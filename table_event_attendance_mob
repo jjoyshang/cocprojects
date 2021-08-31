@@ -5,12 +5,10 @@
 DROP TABLE IF EXISTS coc_reporting.mob_eventattendance;
 CREATE TABLE coc_reporting.mob_eventattendance AS
 
+/* Events in our PAC Mobilize account. */
 WITH mob_base AS (
 SELECT
-	timeslots.id AS mob_timeslotid
-        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
-	, events.id AS mob_eventid
-        -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
+  events.id AS mob_eventid
 	, van_events.van_id AS mob_vaneventid
     		-- ^For joining with events in EveryAction
 	, events.title AS mob_eventname
@@ -31,24 +29,20 @@ SELECT
   
   			, events.location__region AS mob_eventstate
      			   -- ^The label in the table is weird, but the result is for state.
-  			, timeslots.start_date AS mob_date
    		  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
               -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
               -- ^Combining the first and last name, since this field will just be for filtering events.
 
-	,  ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY events.modified_date DESC) AS timeslot_dup
-        -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
+	,  ROW_NUMBER () OVER (PARTITION BY mob_eventid ORDER BY events.modified_date DESC) AS event_dup
+        -- ^For deduping. I want the most up to date version of the event name, location etc. 
 	, van_events.modified_date AS van_modifieddate
   			-- ^For deduping later.
 
 FROM coc_mobilize_pac.events
-
-LEFT JOIN coc_mobilize_pac.timeslots
-	ON timeslots.event_id = events.id 
 LEFT JOIN coc_mobilize_pac.van_events
   ON van_events.event_id = events.id
   
-WHERE timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
+WHERE events.created_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
     -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
   AND events.deleted_date IS NULL
   AND events.title NOT LIKE '%Cancelled%'
@@ -58,12 +52,12 @@ WHERE timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE 
 ),
 
 
--- This CTE is deduping the duplicates of events and timeslots in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
+-- This CTE is deduping the duplicates of events in Mobilize, since Mobilize creates a new row for every change that is made. The result assigns a row number for every unique combination for timeslots and events, with 1 being the most recently modified.
 mob_deduping AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY van_modifieddate DESC) AS van_dup
+  , ROW_NUMBER () OVER (PARTITION BY mob_eventid ORDER BY van_modifieddate DESC) AS van_dup
 FROM mob_base
-WHERE timeslot_dup = 1
+WHERE event_dup = 1
 ),
 
 
@@ -75,9 +69,22 @@ FROM mob_deduping
 ),
 
 
+mob_timeslot AS (
+SELECT 
+    mob_dedup.*
+    timeslots.id AS mob_timeslotid
+        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
+    , timeslots.start_date AS mob_date
+    , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY timeslots.modified_date DESC) AS timeslot_dup
+FROM mob_dedup
+LEFT JOIN coc_mobilize_pac.timeslots
+  ON timeslots.event_id = mob_eventid
+),
+
+
 mob_base2 AS (
 SELECT
-    *
+    mob_timeslot.*
     , participations.user_id AS mob_userid
   	, participations.user__given_name AS mob_firstname
   	, participations.user__family_name AS mob_lastname
@@ -90,7 +97,7 @@ SELECT
   	, van_persons.modified_date AS van_person_moddate
   			-- ^For deduping later.
 
-FROM mob_dedup
+FROM mob_timeslot
 
 LEFT JOIN coc_mobilize_pac.participations
 	ON mob_eventid = participations.event_id
@@ -98,7 +105,8 @@ LEFT JOIN coc_mobilize_pac.participations
 LEFT JOIN coc_mobilize_pac.van_persons
   ON van_persons.user_id = participations.user_id
 
-WHERE participations.attended = 't'
+WHERE timeslot_dup = 1 
+  AND participations.attended = 't'
 	-- ^Filter for Completed attendances, where 'attended' equals true.
 ),
 
@@ -141,11 +149,10 @@ FROM mob_deduping2
 ),
 
 
+/* Events in our c4 Mobilize account. */
 mob_c4_base AS (
 SELECT
-  	coc_mobilize_c4_timeslots.id AS mob_c4_timeslotid
-        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
-    , coc_mobilize_c4_events.id AS mob_c4_eventid
+    coc_mobilize_c4_events.id AS mob_c4_eventid
         -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
   	, coc_mobilize_c4_van_events.van_id AS mob_c4_vaneventid
     		-- ^For joining with events in EveryAction
@@ -166,23 +173,20 @@ SELECT
          	   -- ^Format to match EA
   			, coc_mobilize_c4_events.location__region AS mob_c4_eventstate
      			   -- ^The label in the table is weird, but the result is for state.
-  			, coc_mobilize_c4_timeslots.start_date AS mob_c4_date
    		  , (coc_mobilize_c4_events.owner__family_name || ', ' || coc_mobilize_c4_events.owner__given_name) AS mob_c4_eventowner
               -- ^Chose event owner, as opposed to created by or event host. Sometime the creator of an event is not owning it.
               -- ^Combining the first and last name, since this field will just be for filtering events.
 
-  	, ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY coc_mobilize_c4_events.modified_date DESC) AS c4_timeslot_dup
+  	, ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid ORDER BY coc_mobilize_c4_events.modified_date DESC) AS c4_event_dup
         -- ^For deduping. Chose events.modified date instead of timeslots.modified date, since I want the most up to date version of the event name, location etc. 
   	, coc_mobilize_c4_van_events.modified_date AS c4_van_moddate
 
 FROM coc_mobilize_c4.coc_mobilize_c4_events
 
-LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_timeslots
-	ON coc_mobilize_c4_timeslots.event_id = coc_mobilize_c4_events.id 
 LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_van_events 
   ON coc_mobilize_c4_van_events.event_id = coc_mobilize_c4_events.id
   
-WHERE coc_mobilize_c4_timeslots.start_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
+WHERE coc_mobilize_c4_events.created_date BETWEEN '2020-09-01 00:00:00+00' AND (SELECT GETDATE ())
     -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
   AND coc_mobilize_c4_events.deleted_date IS NULL
   AND coc_mobilize_c4_events.title NOT LIKE '%Cancelled%'
@@ -197,7 +201,7 @@ mob_c4_deduping AS (
 SELECT *
   , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY c4_van_moddate DESC) AS c4_van_dup
 FROM mob_c4_base
-WHERE c4_timeslot_dup = 1
+WHERE c4_event_dup = 1
 ),
 
 
@@ -207,10 +211,21 @@ FROM mob_c4_deduping
 	WHERE c4_van_dup = 1
 ),
 
+mob_c4_timeslot AS (
+SELECT 
+    mob_c4_dedup.*
+    coc_mobilize_c4_timeslots.id AS mob_c4_timeslotid
+      -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
+    , coc_mobilize_c4_timeslots.start_date AS mob_c4_date
+    , ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid ORDER BY coc_mobilize_c4_timeslots.modified_date DESC) AS c4_timeslot_dup
+FROM mob_c4_dedup
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_timeslots
+	ON coc_mobilize_c4_timeslots.event_id = mob_c4_dedup.mob_c4_eventid
+),
 
 mob_c4_base2 AS (
 SELECT
-    *
+    mob_c4_timeslot.*
     , coc_mobilize_c4_participations.user_id AS mob_c4_userid
   	, coc_mobilize_c4_participations.user__given_name AS mob_c4_firstname
   	, coc_mobilize_c4_participations.user__family_name AS mob_c4_lastname
@@ -221,7 +236,7 @@ SELECT
   	, ROW_NUMBER () OVER (PARTITION BY mob_c4_eventid, mob_c4_timeslotid, mob_c4_userid ORDER BY coc_mobilize_c4_participations.modified_date DESC) AS c4_user_dup
   	, coc_mobilize_c4_van_persons.modified_date AS c4_van_person_moddate
 
-FROM mob_c4_dedup
+FROM mob_c4_timeslot
 
 LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_participations
 	ON mob_c4_eventid = coc_mobilize_c4_participations.event_id
@@ -229,7 +244,8 @@ LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_participations
 LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_van_persons
   ON coc_mobilize_c4_van_persons.user_id = coc_mobilize_c4_participations.user_id
 
-WHERE coc_mobilize_c4_participations.attended = 't'
+WHERE c4_timeslot_dup = 1
+  AND coc_mobilize_c4_participations.attended = 't'
 	-- ^Filter for Completed attendances, where 'attended' equals true.
 ),
 
