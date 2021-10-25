@@ -1,4 +1,7 @@
--- * Create a table that pulls together relevant fields from EveryAction for a report on event attendance for the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. *
+/* Create a table that pulls together relevant fields from EveryAction for a report on event attendance for 
+the field team. The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. 
+Table also includes event name, date, state, owner, event type, as well as participant zipcode. This table can 
+be queried for specific questions. */
 
 
 DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
@@ -11,6 +14,11 @@ SELECT
     , LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS ea_date
         -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
         -- ^Included for filtering.
+    , CASE
+        WHEN coc_events.createdby = '1960269' THEN 'PAC'
+        WHEN coc_events.createdby = '1931224' THEN 'c4'
+        ELSE NULL
+      END AS ea_entity
     , coc_events.eventname AS ea_eventname
         -- ^Included for filtering.
   	, CASE
@@ -85,6 +93,7 @@ SELECT
   			THEN 'Every Action'
   			ELSE NULL
   		END AS ea_source
+  	, ea_entity
     , ea_date
     , ea_eventname
   	, ea_eventtype
@@ -121,7 +130,8 @@ WHERE emaildupe = 1
     , 'passmorejr@gmail.com'
     , 'chuniq.inpower@gmail.com'
     , 'cpetty1992@gmail.com'
-    , 'mnblackjoy@gmail.com')
+    , 'mnblackjoy@gmail.com'
+  )
     -- ^ Filter out personal emails of COC staff that we're seeing in EA
   
 ;
