@@ -1,0 +1,108 @@
+/* Bringing event information from the EA Event Attendance table I made before, which has preformatted and cleaned event info. 
+https://platform.civisanalytics.com/spa/#/scripts/sql/100953079 */
+WITH events AS (
+SELECT DISTINCT
+  ea_eventid AS event_id
+  , ea_eventname AS event_name
+  , ea_eventtype AS event_type
+FROM coc_reporting.ea_eventattendance
+WHERE --ea_eventdate BETWEEN '2021-01-01' AND '2021-11-30'
+  -- ^ Filtering to the analysis window
+  event_id = '750036570'
+  -- ^ event with multiple inputtype and contacts rercords, for checking
+)
+
+
+, base AS (
+SELECT
+  events.*
+  , signups.eventshiftid AS event_shiftid
+  , shifts.datetimeoffsetbegin AS event_shiftdate
+  -- ^ For events with multiple shifts, the shift date is more accurate than the overall event date.
+  , signups.eventsignupid AS attendee_signupid
+  , signups.vanid
+  , signups.eventrolename AS attendee_role
+  , statuses.eventsignupseventstatusid AS attendee_signupsstatusid
+  , CASE
+        WHEN statuses.createdby = '1960269' THEN 'Mobilize PAC'
+        WHEN statuses.createdby = '1931224' THEN 'Mobilize c4'
+        WHEN statuses.createdby = '1399286' THEN 'ThruText'
+        WHEN statuses.createdby = '1781028' THEN 'Open VPB'
+        ELSE NULL
+      END AS temp_statuses_api
+    -- ^ Reformatting statuses created by API to the platform name
+  , NVL(contacttypes.contacttypename, input.inputtypename, temp_statuses_api)  AS status_createdby
+  /* ^ Cascading to the most specific name of how a status is created. The most specific is the contacttypename which shows
+  the type of real contact, such as a One on One. The next is inputtypename which shows VPB, Bulk, or Manual. The last is 
+  which API created the status, from the field directly above this one.
+  */
+  , CASE WHEN temp_statuses_api IS NULL
+      THEN NVL(contacts.username, statuses.createdbyusername)
+      ELSE NULL
+    END AS status_creatorname
+  /* ^ First, only taking names when the status creator is NOT an api. If it is an api, I will get the api name.
+  Then cascading to the most specific name of which person created a status. The contacts.username shows who talked to the 
+  member in a real contact, such as a One on One. The statuses.createdbyusername shows the name of the EA user who added
+  the status.
+  */
+  , statuses.eventstatusname AS attendee_status
+  , NVL(contacts.datecanvassed, statuses.datecreated) AS status_datecreated
+  /* ^ Cascading the most accurate date to least accurate. For a real contact, the contacts.datecanvassed will show when we
+  talked to the member. If not, it will show the date the status was added.
+  */
+  , statuses.datemodified AS status_datemodified
+  , CASE WHEN 
+      attendee_status IN ('No Show', 'Completed') THEN
+        ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, signups.vanid ORDER BY status_datemodified DESC)
+      ELSE 1
+    END AS noshow_completes_rank
+    /* For No Shows or Completes, I only want the most recently updated status. I do not want duplicates if this has been
+    changed or added multiple times.
+    Rank them with the most recently updated as 1. Every other status is also 1.
+    In the next CTE I fill filter this. */
+FROM events
+LEFT JOIN tmc_van.coc_eventsignups AS signups
+	ON events.event_id = signups.eventid
+LEFT JOIN tmc_van.coc_eventshifts AS shifts
+  ON signups.eventshiftid = shifts.eventshiftid
+LEFT JOIN tmc_van.coc_eventsignupsstatuses AS statuses
+	ON signups.eventsignupid = statuses.eventsignupid
+LEFT JOIN tmc_van.coc_contactscontacts_mym AS contacts
+  ON statuses.contactscontactid = contacts.contactscontactid
+LEFT JOIN tmc_van.tsm_tmc_inputtypes AS input
+  ON contacts.inputtypeid = input.inputtypeid
+LEFT JOIN tmc_van.tsm_tmc_contacttypes AS contacttypes
+  ON contacts.contacttypeid = contacttypes.contacttypeid
+)
+
+, dedup1 AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, attendee_status, status_createdby, status_creatorname, 
+  TO_DATE(status_datecreated, 'YYYY-MM-DD') ORDER BY status_datemodified DESC)
+    AS status_rank 
+  /* For each event and person, I want to get rid of status changes that are from the same source and same day. For example,
+  if someone as marked as Sched-Web from ThruText twice on the same day I only want one records. But I will include both records
+  for if someone was marked as Sched-Web from ThruText and Mobilize on the same day, or if someone was marked as Sched-Web
+  in Mobilize on two different days. */
+FROM base
+WHERE noshow_completes_rank = 1
+)
+
+
+SELECT 
+  event_id
+  , event_name
+  , event_type
+  , event_shiftid
+  , event_shiftdate
+  , vanid
+  , attendee_role
+  , attendee_status
+  , attendee_signupid
+  , attendee_signupsstatusid
+  , status_createdby
+  , status_creatorname
+  , status_datecreated
+  , status_datemodified
+FROM dedup1
+WHERE status_rank = 1
