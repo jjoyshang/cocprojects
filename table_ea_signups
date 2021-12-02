@@ -32,10 +32,10 @@ SELECT
         ELSE NULL
       END AS temp_statuses_api
     -- ^ Reformatting statuses created by API to the platform name
-  , NVL(contacttypes.contacttypename, input.inputtypename, temp_statuses_api)  AS status_createdby
+  , NVL(contacttypes.contacttypename, temp_statuses_api, input.inputtypename)  AS status_createdby
   /* ^ Cascading to the most specific name of how a status is created. The most specific is the contacttypename which shows
-  the type of real contact, such as a One on One. The next is inputtypename which shows VPB, Bulk, or Manual. The last is 
-  which API created the status, from the field directly above this one.
+  the type of real contact, such as a One on One. The next the name of the API that created the status, if relevant. Last 
+  is inputtypename which shows VPB, Bulk, Manual, or API.
   */
   , CASE WHEN temp_statuses_api IS NULL
       THEN NVL(contacts.canvassedby, statuses.createdby)
@@ -72,6 +72,7 @@ LEFT JOIN tmc_van.coc_contactscontacts_mym AS contacts
   ON statuses.contactscontactid = contacts.contactscontactid
 LEFT JOIN tmc_van.tsm_tmc_inputtypes AS input
   ON contacts.inputtypeid = input.inputtypeid
+  OR signups.inputtypeid = input.inputtypeid
 LEFT JOIN tmc_van.tsm_tmc_contacttypes AS contacttypes
   ON contacts.contacttypeid = contacttypes.contacttypeid
 )
