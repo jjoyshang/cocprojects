@@ -6,9 +6,10 @@ SELECT DISTINCT
   , ea_eventname AS event_name
   , ea_eventtype AS event_type
 FROM coc_reporting.ea_eventattendance
-WHERE --ea_eventdate BETWEEN '2021-01-01' AND '2021-11-30'
+WHERE ea_date BETWEEN '2021-10-01' AND '2021-11-30'
+  --ea_date BETWEEN '2021-01-01' AND '2021-11-30'
   -- ^ Filtering to the analysis window
-  event_id = '750036570'
+  --event_id = '750036570'
   -- ^ event with multiple inputtype and contacts rercords, for checking
 )
 
@@ -37,12 +38,12 @@ SELECT
   which API created the status, from the field directly above this one.
   */
   , CASE WHEN temp_statuses_api IS NULL
-      THEN NVL(contacts.username, statuses.createdbyusername)
+      THEN NVL(contacts.canvassedby, statuses.createdby)
       ELSE NULL
-    END AS status_creatorname
-  /* ^ First, only taking names when the status creator is NOT an api. If it is an api, I will get the api name.
-  Then cascading to the most specific name of which person created a status. The contacts.username shows who talked to the 
-  member in a real contact, such as a One on One. The statuses.createdbyusername shows the name of the EA user who added
+    END AS status_creatorid
+  /* ^ First, only taking user ids when the status creator is NOT an api. If it is an api, I will get the api id.
+  Then cascading to the most specific user of which person created a status. The contacts.canvassedby shows who talked to the 
+  member in a real contact, such as a One on One. The statuses.createdby shows the name of the EA user who added
   the status.
   */
   , statuses.eventstatusname AS attendee_status
@@ -77,7 +78,7 @@ LEFT JOIN tmc_van.tsm_tmc_contacttypes AS contacttypes
 
 , dedup1 AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, attendee_status, status_createdby, status_creatorname, 
+  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, attendee_status, status_createdby, status_creatorid, 
   TO_DATE(status_datecreated, 'YYYY-MM-DD') ORDER BY status_datemodified DESC)
     AS status_rank 
   /* For each event and person, I want to get rid of status changes that are from the same source and same day. For example,
@@ -95,14 +96,19 @@ SELECT
   , event_type
   , event_shiftid
   , event_shiftdate
-  , vanid
+  , dedup1.vanid
   , attendee_role
   , attendee_status
   , attendee_signupid
   , attendee_signupsstatusid
   , status_createdby
-  , status_creatorname
+  , NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) 
+      AS status_creatorname
   , status_datecreated
   , status_datemodified
 FROM dedup1
+LEFT JOIN tmc_van.tsm_tmc_users
+	ON tsm_tmc_users.userid = status_creatorid
+LEFT JOIN tmc_van.coc_publicusers
+	ON coc_publicusers.publicuserid = status_creatorid
 WHERE status_rank = 1
