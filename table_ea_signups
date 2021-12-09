@@ -1,13 +1,20 @@
+DROP TABLE IF EXISTS coc_reporting.ea_eventsignups;
+CREATE TABLE coc_reporting.ea_eventsignups AS
+
+
 /* Bringing event information from the EA Event Attendance table I made before, which has preformatted and cleaned event info. 
 https://platform.civisanalytics.com/spa/#/scripts/sql/100953079 */
 WITH events AS (
 SELECT DISTINCT
   ea_eventid AS event_id
   , ea_eventname AS event_name
-  , ea_eventtype AS event_type
+  , CASE WHEN ea_eventtype = 'OpenVPB' THEN 'Open VPB'
+    -- ^ Combining Open VPB names
+    ELSE ea_eventtype
+      END AS event_type
 FROM coc_reporting.ea_eventattendance
-WHERE ea_date BETWEEN '2021-10-01' AND '2021-11-30'
-  --ea_date BETWEEN '2021-01-01' AND '2021-11-30'
+WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
+  ea_date BETWEEN '2021-01-01' AND '2021-11-30'
   -- ^ Filtering to the analysis window
   --event_id = '750036570'
   -- ^ event with multiple inputtype and contacts rercords, for checking
@@ -18,8 +25,9 @@ WHERE ea_date BETWEEN '2021-10-01' AND '2021-11-30'
 SELECT
   events.*
   , signups.eventshiftid AS event_shiftid
-  , shifts.datetimeoffsetbegin AS event_shiftdate
-  -- ^ For events with multiple shifts, the shift date is more accurate than the overall event date.
+  , TO_TIMESTAMP(shifts.datetimeoffsetbegin, 'YYYY-MM-DD HH24:MI:SS') AS event_shiftdate
+  /* For events with multiple shifts, the shift date is more accurate than the overall event date. 
+  Formatting from varchar to timestamp. */
   , signups.eventsignupid AS attendee_signupid
   , signups.vanid
   , signups.eventrolename AS attendee_role
@@ -90,7 +98,6 @@ FROM base
 WHERE noshow_completes_rank = 1
 )
 
-
 SELECT 
   event_id
   , event_name
@@ -105,6 +112,7 @@ SELECT
   , status_createdby
   , NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) 
       AS status_creatorname
+    -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
   , status_datecreated
   , status_datemodified
 FROM dedup1
@@ -113,3 +121,9 @@ LEFT JOIN tmc_van.tsm_tmc_users
 LEFT JOIN tmc_van.coc_publicusers
 	ON coc_publicusers.publicuserid = status_creatorid
 WHERE status_rank = 1
+
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.ea_eventsignups TO GROUP coc;
+GRANT ALL ON coc_reporting.ea_eventsignups TO jshang, jharris1;
