@@ -8,10 +8,7 @@ WITH events AS (
 SELECT DISTINCT
   ea_eventid AS event_id
   , ea_eventname AS event_name
-  , CASE WHEN ea_eventtype = 'OpenVPB' THEN 'Open VPB'
-    -- ^ Combining Open VPB names
-    ELSE ea_eventtype
-      END AS event_type
+  , ea_eventtype AS event_type
 FROM coc_reporting.ea_eventattendance
 WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
   ea_date BETWEEN '2021-01-01' AND '2021-11-30'
@@ -109,7 +106,10 @@ SELECT
   , attendee_status
   , attendee_signupid
   , attendee_signupsstatusid
-  , status_createdby
+  , CASE WHEN status_createdby = 'OpenVPB' THEN 'Open VPB'
+    ELSE status_createdby
+      END AS status_createdby
+    -- ^ Combine Open VPB categories
   , NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) 
       AS status_creatorname
     -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
