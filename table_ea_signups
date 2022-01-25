@@ -18,16 +18,66 @@ WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
 )
 
 
-, base AS (
-SELECT
+, attendees AS (
+SELECT DISTINCT
   events.*
   , signups.eventshiftid AS event_shiftid
   , TO_TIMESTAMP(shifts.datetimeoffsetbegin, 'YYYY-MM-DD HH24:MI:SS') AS event_shiftdate
   /* For events with multiple shifts, the shift date is more accurate than the overall event date. 
   Formatting from varchar to timestamp. */
   , signups.eventsignupid AS attendee_signupid
+  , signups.inputtypeid
   , signups.vanid
   , signups.eventrolename AS attendee_role
+  , emails.email AS attendee_email
+  /* Bringing in email so that in the next CTE I can filter out attendees with a COC email, indicating that they are 
+  actually a staff member.*/
+  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, signups.vanid ORDER BY emails.datemodified DESC) AS emaildupe
+  -- In the next CTE, used to only include the most recently modified email per person.
+FROM events
+LEFT JOIN tmc_van.coc_eventsignups AS signups
+	ON events.event_id = signups.eventid
+LEFT JOIN tmc_van.coc_eventshifts AS shifts
+  ON signups.eventshiftid = shifts.eventshiftid
+LEFT JOIN tmc_van.coc_contactsemails_mym AS emails
+  ON emails.vanid = signups.vanid
+)
+
+, attendees_clean AS (
+SELECT
+  attendees.*
+FROM attendees
+WHERE emaildupe = 1
+  AND attendee_email NOT LIKE '%@colorofchange.org'
+    -- ^ Filter out COC emails, which we assume are staff.
+  AND attendee_email NOT IN (
+    'Meleemewilson@gmail.com'
+    , 'jvharris02@gmail.com'
+    , 'derrickquarles@yahoo.com'
+    , 'cdpark81@gmail.com'
+    , 'destanien@icloud.com'
+    , 'michidael.ceard@gmail.com'
+    , 'anazdin+3@gmail.com'
+    , 'Salaah.muhammad@gmail.com'
+    , 'carolinefreedman@gmail.com'
+    , 'Sadie.Dean16@gmail.com'
+    , 'candice@1kwomenstrong.com'
+    , 'qmalone26@gmail.com'
+    , 'naima.savage@gmail.com'
+    , 'cgreer@texasaft.org'
+    , 'ebony.hardyallen@gmail.com'
+    , 'daniesha93@gmail.com'
+    , 'passmorejr@gmail.com'
+    , 'chuniq.inpower@gmail.com'
+    , 'cpetty1992@gmail.com'
+    , 'mnblackjoy@gmail.com'
+  )
+    -- ^ Filter out personal emails of COC staff that we're seeing in EA
+)
+
+, base AS (
+SELECT
+  attendees_clean.*
   , statuses.eventsignupseventstatusid AS attendee_signupsstatusid
   , CASE
         WHEN statuses.createdby = '1960269' THEN 'Mobilize PAC'
@@ -59,30 +109,32 @@ SELECT
   , statuses.datemodified AS status_datemodified
   , CASE WHEN 
       attendee_status IN ('No Show', 'Completed') THEN
-        ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, signups.vanid ORDER BY status_datemodified DESC)
+        ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, attendees_clean.vanid ORDER BY status_datemodified DESC)
       ELSE 1
     END AS noshow_completes_rank
     /* For No Shows or Completes, I only want the most recently updated status. I do not want duplicates if this has been
     changed or added multiple times.
     Rank them with the most recently updated as 1. Every other status is also 1.
     In the next CTE I fill filter this. */
-FROM events
-LEFT JOIN tmc_van.coc_eventsignups AS signups
-	ON events.event_id = signups.eventid
-LEFT JOIN tmc_van.coc_eventshifts AS shifts
-  ON signups.eventshiftid = shifts.eventshiftid
+FROM attendees_clean
 LEFT JOIN tmc_van.coc_eventsignupsstatuses AS statuses
-	ON signups.eventsignupid = statuses.eventsignupid
+	ON attendees_clean.attendee_signupid = statuses.eventsignupid
 LEFT JOIN tmc_van.coc_contactscontacts_mym AS contacts
   ON statuses.contactscontactid = contacts.contactscontactid
 LEFT JOIN tmc_van.tsm_tmc_inputtypes AS input
   ON contacts.inputtypeid = input.inputtypeid
-  OR signups.inputtypeid = input.inputtypeid
+  OR attendees_clean.inputtypeid = input.inputtypeid
 LEFT JOIN tmc_van.tsm_tmc_contacttypes AS contacttypes
   ON contacts.contacttypeid = contacttypes.contacttypeid
 )
 
 , dedup1 AS (
+SELECT *
+FROM base
+WHERE noshow_completes_rank = 1
+)
+
+, dedup2 AS (
 SELECT *
   , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, attendee_status, status_createdby, status_creatorid, 
   TO_DATE(status_datecreated, 'YYYY-MM-DD') ORDER BY status_datemodified DESC)
@@ -91,8 +143,7 @@ SELECT *
   if someone as marked as Sched-Web from ThruText twice on the same day I only want one records. But I will include both records
   for if someone was marked as Sched-Web from ThruText and Mobilize on the same day, or if someone was marked as Sched-Web
   in Mobilize on two different days. */
-FROM base
-WHERE noshow_completes_rank = 1
+FROM dedup1
 )
 
 SELECT 
@@ -101,7 +152,7 @@ SELECT
   , event_type
   , event_shiftid
   , event_shiftdate
-  , dedup1.vanid
+  , dedup2.vanid
   , attendee_role
   , attendee_status
   , attendee_signupid
@@ -115,13 +166,12 @@ SELECT
     -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
   , status_datecreated
   , status_datemodified
-FROM dedup1
+FROM dedup2
 LEFT JOIN tmc_van.tsm_tmc_users
 	ON tsm_tmc_users.userid = status_creatorid
 LEFT JOIN tmc_van.coc_publicusers
 	ON coc_publicusers.publicuserid = status_creatorid
 WHERE status_rank = 1
-
 ;
 
 -- Grant access:
