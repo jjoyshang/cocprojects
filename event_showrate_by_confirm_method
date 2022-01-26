@@ -1,0 +1,88 @@
+-- Are people who are Confirmed through a specific contact method more likely to attend?
+/*  Based on what method people were Confirmed by, what is their show rate (grouped by event type)?
+For people who never had a Confirmed or Conf Twice status, they are called "Never Confirmed". */
+
+/* For every event, this CTE gets the vanid of people who were Confirmed and what method they were confirmed with. */
+WITH t_confirmed AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , vanid
+  , status_createdby
+FROM coc_reporting.ea_eventsignups
+WHERE attendee_status IN ('Confirmed', 'Conf Twice')
+)
+
+/* For every event, this CTE gets the vanid of people who were marked as Completed and flags them with completed_status. */
+, t_completes AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , vanid
+  , attendee_status AS completed_status
+FROM coc_reporting.ea_eventsignups
+WHERE attendee_status = 'Completed'
+)
+
+/* This CTE brings in everyone with any status for all events. I will use this is the base of all people and events to join 
+our two previous CTEs.*/
+, t_base AS (
+SELECT DISTINCT
+    event_id
+  , event_shiftid
+  , event_type
+  , event_shiftdate
+  , vanid
+FROM coc_reporting.ea_eventsignups
+--WHERE event_id = 750055740
+ -- ^ For testing
+)
+
+/* Join all CTEs, using t_base as the base with all people and events and joining columns for how people were confirmed and 
+whether they were completed. */
+, t_combine AS(
+SELECT
+  t_base.event_id
+  , t_base.event_shiftid
+  , t_base.event_type
+  , t_base.vanid
+  , CASE WHEN status_createdby IS NOT NULL THEN status_createdby
+      ELSE 'Never Confirmed'
+      END AS confirm_method
+    -- Where someone has scheduled, what method were they scheduled by. If not, mark as 'Never Confirmed'.
+  , completed_status
+FROM t_base
+LEFT JOIN t_confirmed
+  ON t_base.event_id = t_confirmed.event_id
+  AND t_base.event_shiftid = t_confirmed.event_shiftid
+  AND t_base.vanid = t_confirmed.vanid
+LEFT JOIN t_completes
+  ON t_base.event_id = t_completes.event_id
+  AND t_base.event_shiftid = t_completes.event_shiftid
+  AND t_base.vanid = t_completes.vanid
+)
+
+/* For each event and cinfirm method, calculate the show rate as the # of people completed / # of people confirmed. 
+One person will be included in the show rate for every unique recruitment method. 
+Therefore, if one person was Sched-Web for both ThruText and Mobilize, they'd be included in both. */
+, t_calculate AS (
+SELECT
+  event_type
+  , event_id
+  , event_shiftid
+  , confirm_method
+  , COUNT(vanid) AS count_confirmed
+  , COUNT(completed_status) AS count_completed
+  , count_completed*100::decimal(10,2)/count_confirmed AS show_rate
+    -- ^ Show rate is the number of people Completed divided by number of people Confirmed for the event.
+FROM t_combine
+GROUP BY 1,2,3,4
+)
+
+/* For each event type and confirm method, calculate the average show rate.*/
+SELECT
+  event_type
+  , confirm_method
+  , AVG(show_rate) AS avg_show_rate
+FROM t_calculate
+GROUP BY 1,2
