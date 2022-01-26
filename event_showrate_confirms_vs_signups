@@ -1,0 +1,102 @@
+-- Are people who are confirmed more likely to attend than those who are only scheduled?
+/* For an event and person, were they Confirmed? If not Scheduled? Or else had another record for that event. */
+
+/* For every event, flag if someone was marked as Scheduled, Sched-Web, or Invited. */
+WITH t_scheduled AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , vanid
+  , 'Scheduled' AS scheduled_flag
+FROM coc_reporting.ea_eventsignups
+WHERE attendee_status IN ('Scheduled', 'Sched-Web', 'Invited')
+)
+
+/* For every event, flag if someone was marked as Confirmed or Conf Twice. */
+, t_confirmed AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , vanid
+  , 'Confirmed' AS confirm_flag
+FROM coc_reporting.ea_eventsignups
+WHERE attendee_status IN ('Confirmed', 'Conf Twice')
+)
+
+/* For every event, flag if someone was marked as Completed. */
+, t_completes AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , vanid
+  , attendee_status AS completed_status
+FROM coc_reporting.ea_eventsignups
+WHERE attendee_status = 'Completed'
+)
+
+/* This CTE brings in everyone with any status for all events. I will use this is the base of all people and events to join 
+our two previous CTEs. This allows me to include people who were never Scheduled, Confirmed, or Completed. */
+, t_base AS (
+SELECT DISTINCT
+  event_id
+  , event_shiftid
+  , event_type
+  , event_shiftdate
+  , vanid
+FROM coc_reporting.ea_eventsignups
+WHERE event_id = 750055740
+ -- ^ For testing
+)
+
+/* Join all CTEs, using t_base as the base with all people and events and joining columns for whether they were scheduled, 
+confirmed, or completed. */
+, t_combine AS(
+SELECT
+  t_base.event_id
+  , t_base.event_shiftid
+  , t_base.event_type
+  , t_base.vanid
+  , CASE WHEN confirm_flag IS NOT NULL THEN confirm_flag
+      WHEN scheduled_flag IS NOT NULL THEN scheduled_flag
+      ELSE 'Never Scheduled'
+      END AS signup_status
+      /* ^ Combining fields for Scheduled flag and Confirm flag into Signup Status, where if someone was Confirmed and
+      Scheduled they would be marked as Confirmed. If someone was never marked for Scheduled or Confirmed, they are 'Never Scheduled'. */
+  , completed_status
+FROM t_base
+LEFT JOIN t_scheduled
+  ON t_base.event_id = t_scheduled.event_id
+  AND t_base.event_shiftid = t_scheduled.event_shiftid
+  AND t_base.vanid = t_scheduled.vanid
+LEFT JOIN t_confirmed
+  ON t_base.event_id = t_confirmed.event_id
+  AND t_base.event_shiftid = t_confirmed.event_shiftid
+  AND t_base.vanid = t_confirmed.vanid
+LEFT JOIN t_completes
+  ON t_base.event_id = t_completes.event_id
+  AND t_base.event_shiftid = t_completes.event_shiftid
+  AND t_base.vanid = t_completes.vanid
+)
+
+/* For each event and signup status, calculate the show rate as the # of people completed / # of people scheduled. */
+, t_calculate AS (
+SELECT
+  event_type
+  , event_id
+  , event_shiftid
+  , signup_status
+  , COUNT(vanid) AS count_scheduled
+  , COUNT(completed_status) AS count_completed
+  , count_completed*100::decimal(10,2)/count_scheduled AS show_rate
+    -- ^ Show rate is the number of people Completed divided by number of people Scheduled for the event.
+FROM t_combine
+GROUP BY 1,2,3,4
+)
+
+
+SELECT
+  event_type
+  , signup_status
+  , AVG(show_rate) AS avg_show_rate
+FROM t_calculate
+GROUP BY 1,2
