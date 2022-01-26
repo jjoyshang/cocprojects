@@ -14,7 +14,7 @@ WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
   ea_date BETWEEN '2021-01-01' AND '2021-11-30'
   -- ^ Filtering to the analysis window
   --event_id = '750036570'
-  -- ^ event with multiple inputtype and contacts rercords, for checking
+  -- ^ event with multiple inputtype and contacts records, for checking
 )
 
 
@@ -101,6 +101,9 @@ SELECT
   member in a real contact, such as a One on One. The statuses.createdby shows the name of the EA user who added
   the status.
   */
+  , CASE WHEN status_createdby = 'API' AND status_creatorid IS NOT NULL THEN 'Manual'
+      ELSE status_createdby
+      END AS status_createdby_clean
   , statuses.eventstatusname AS attendee_status
   , NVL(contacts.datecanvassed, statuses.datecreated) AS status_datecreated
   /* ^ Cascading the most accurate date to least accurate. For a real contact, the contacts.datecanvassed will show when we
