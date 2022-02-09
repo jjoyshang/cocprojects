@@ -59,12 +59,14 @@ SELECT
   , primary_key
   , first_name
   , last_name
+ 
 -- Fields from the voter file:
+  , cell_tsmart_wireless_phone AS cell_phone
   , ntl_current.vb_tsmart_state AS state
   , ntl_current.vb_tsmart_city AS city
   , ntl_current.vb_tsmart_zip AS zip
-  --, ntl_current.vb_tsmart_latitude AS latitude
-  --, ntl_current.vb_tsmart_longitude AS longitude
+  , ntl_current.vb_tsmart_latitude AS latitude
+  , ntl_current.vb_tsmart_longitude AS longitude
   , ntl_current.vb_voterbase_age AS age
 	, ntl_current.vb_voterbase_gender AS gender
 	, CASE WHEN ntl_current.vb_voterbase_race = 'Uncoded' THEN 'Unknown'
@@ -73,66 +75,7 @@ SELECT
   		-- ^Renaming to be more clear and less technial.
 	, ntl_current.vb_voterbase_marital_status AS marital_status
   , ntl_current.vb_vf_party AS political_party
-  /*, CASE
-      	WHEN ntl_current.vb_family_composition_code = 'A' THEN 'Single'
-      	WHEN ntl_current.vb_family_composition_code = 'B' THEN 'Single with children'
-      	WHEN ntl_current.vb_family_composition_code = 'C' THEN 'Couple'
-      	WHEN ntl_current.vb_family_composition_code = 'D' THEN 'Couple with children'
-      	WHEN ntl_current.vb_family_composition_code = 'E' THEN 'Multiple generations'
-       	WHEN ntl_current.vb_family_composition_code = 'F' THEN 'More than 3 surnames'
-        WHEN ntl_current.vb_family_composition_code = 'G' THEN 'Other'
-       	ELSE ntl_current.vb_family_composition_code 
-    	END AS family_composition*/
-  --, ntl_current.vb_number_of_children_in_household AS number_children
-  /* , CASE
-      	WHEN ntl_current.vb_homeowner_indicator = 'Y' THEN 'Yes'
-      	WHEN ntl_current.vb_homeowner_indicator = 'N' THEN 'No'
-      	WHEN ntl_current.vb_homeowner_indicator = 'U' THEN 'Unknown'
-       	ELSE ntl_current.vb_homeowner_indicator 
-    	END AS homeowner_indicator */
-  /*, CASE
-  			WHEN ntl_current.vb_household_income_amount < 25 THEN '< $25,000'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 25 AND ntl_current.vb_household_income_amount < 50 THEN '$25,000 - $49,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 50 AND ntl_current.vb_household_income_amount < 75 THEN '$50,000 - $74,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 75 AND ntl_current.vb_household_income_amount < 100 THEN '$75,000 - $99,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 100 AND ntl_current.vb_household_income_amount < 150 THEN '$100,000 - $149,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 150 AND ntl_current.vb_household_income_amount < 200 THEN
-'$150,000 - $199,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 150 AND ntl_current.vb_household_income_amount < 200 THEN '$150,000 - $199,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 200 AND ntl_current.vb_household_income_amount < 250 THEN '$200,000 - $249,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 250 AND ntl_current.vb_household_income_amount < 500 THEN '$250,000 - $499,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 500 AND ntl_current.vb_household_income_amount < 750 THEN '$500,000 - $749,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 750 AND ntl_current.vb_household_income_amount < 1000 THEN '$750,000 - $999,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 1000 AND ntl_current.vb_household_income_amount < 2500 THEN '$1,000,000 - $2,499,999'::varchar
-  			WHEN ntl_current.vb_household_income_amount >= 2500 THEN '> $2,500,000'::varchar
-  			ELSE ntl_current.vb_household_income_amount::varchar
-  	END AS household_income_buckets*/
-/*  , CASE
-      	WHEN ntl_current.vb_household_net_worth = 'A' THEN '< $25,000'
-      	WHEN ntl_current.vb_household_net_worth = 'B' THEN '$25,000 - $49,999'
-      	WHEN ntl_current.vb_household_net_worth = 'C' THEN '$50,000 - $74,999'
-      	WHEN ntl_current.vb_household_net_worth = 'D' THEN '$75,000 - $99,999'
-      	WHEN ntl_current.vb_household_net_worth = 'E' THEN '$100,000 - $149,999'
-       	WHEN ntl_current.vb_household_net_worth = 'F' THEN '$150,000 - $199,999'
-        WHEN ntl_current.vb_household_net_worth = 'G' THEN '$200,000 - $249,999'
-       	WHEN ntl_current.vb_household_net_worth = 'H' THEN '$250,000 - $499,999'
-        WHEN ntl_current.vb_household_net_worth = 'I' THEN '$500,000 - $749,999'
-        WHEN ntl_current.vb_household_net_worth = 'J' THEN '$750,000 - $999,999'
-        WHEN ntl_current.vb_household_net_worth = 'K' THEN '$1,000,000 - $2,499,999'
-        WHEN ntl_current.vb_household_net_worth = 'L' THEN '$2,500,000 - $4,999,999'
-        WHEN ntl_current.vb_household_net_worth = 'M' THEN '$5,000,000 - $9,999,999'
-        WHEN ntl_current.vb_household_net_worth = 'N' THEN '> $10,000,000'
-       	ELSE ntl_current.vb_household_net_worth
-    	END AS household_net_worth */
-/*  , CASE
-      	WHEN ntl_current.vb_education = '0' THEN 'Unknown'::varchar
-      	WHEN ntl_current.vb_education = '1' THEN 'High School'::varchar
-      	WHEN ntl_current.vb_education = '2' THEN 'Some College'::varchar
-      	WHEN ntl_current.vb_education = '3' THEN 'College Graduate'::varchar
-      	WHEN ntl_current.vb_education = '4' THEN 'Post Graduate'::varchar
-        WHEN ntl_current.vb_education = '6' THEN 'Less than High School Diploma'::varchar
-       	ELSE ntl_current.vb_education::varchar
-    	END AS highest_education */
+  
   , CASE
       	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN '1 Rural (least dense)'
       	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN '2 Rural'
@@ -143,7 +86,7 @@ SELECT
        	ELSE ntl_current.ts_tsmart_urbanicity
     	END AS urbanicity
   
-	, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
+	/*, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
   	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
   , ntl_current.ts_tsmart_partisan_score AS democratic_support_score
   	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
@@ -152,8 +95,29 @@ SELECT
   , ntl_current.ts_tsmart_trump_defector_score AS trump_defector_score
   	-- ^A higher score indicates a higher likelihood that a person was once, but no longer is, a supporter of President Trump. 
   , ntl_current.ts_tsmart_activist_score AS activist_score
-  	-- ^A higher score predicts a higher likelihood that the individual is an activist.
-  , CASE
+  	-- ^A higher score predicts a higher likelihood that the individual is an activist.*/
+		 
+	, intp_child_present_in_household AS children_presence
+	  -- ^ The Presence of Children, childrens's age ranges and number of children selections reflects the probable presence of children under age 18 in a given household. Information is sourced from children's age and gender data which is gathered from a variety of sources that includes public records where they may be available, survey data as well as modeled census based information.
+	, intp_number_of_children_in_household AS number_children
+	, intp_estimated_income_range AS household_income
+  	--^  Modeled estimated income level based upon several known demographic attributes, self-reported information and census demographics. Data is assigned at the household level.
+	, intp_networth_range AS household_networth
+  	-- ^ The net worth selection is a demographically based analytical model which predicts the ranges for household net worth. Net worth is calculated by the total assets etitmated to be associated with a household (such as deposit accounts, investments and home value) minus liabilities (such as loans, mortgages and credit card debt).
+	, intp_education AS education_level
+  	-- ^ Education is defined as the level of education completed by the consumer. This is a probabalistic attribute based on self-reported information, surveys, and census sources.
+	, intp_religion AS religion
+  	-- ^ Religion of individual as provided by self reported participants and overlays from participating source data. 14 distinct values
+	, intp_ct_socialusage30_fb AS facebook_30day_usage
+	 -- ^ Has used or visisted Facebook in the last 30 days
+	, intp_ct_socialusage30_insta AS instagram_30day_usage
+	-- ^ Has used or visisted Instagram in the last 30 days
+	, intp_ct_socialusage30_twitter AS twitter_30day_usage
+	-- ^ Has used or visisted Twitter in the last 30 days
+	, intp_ct_socialusage30_youtube AS youtube_30day_usage
+	-- ^ Has used or visisted YouTube in the last 30 days
+   
+     , CASE
     	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_mormon_raw_score
@@ -197,14 +161,13 @@ SELECT
         WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
      	 ELSE NULL
 		 END AS religion_score_number
-   
+		 
   , ntl_current.ts_tsmart_minimum_wage_score AS minimum_wage_score
   	-- ^A higher score indicates a higher likelihood that a person supports raising the minimum wage to $15 or more
   , ntl_current.ts_tsmart_working_class_score AS working_class_score
   	-- ^A higher score indicates a higher likelihood that a person is working class, as opposed to professional or business class (and whose occupation does not require protective clothing).
   , ntl_current.ts_tsmart_recession_sensitivity_score AS pandemic_financial_hardship_score
   	-- ^A higher score indicates individuals who felt most at-risk of financial hardship during the onset of the COVID-19 outbreak.
-  
   , ntl_current.ts_tsmart_veteran_score AS veteran_score
   	-- ^A higher score indicates a higher likelihood that a person is a military veteran or an active service member.
  -- , ntl_current.predictwise_racial_resentment_score AS racial_resentment_score
@@ -240,13 +203,6 @@ SELECT
  -- , ntl_current.predictwise_criminal_justice_reform_score AS criminal_justice_reform_score
   	-- ^A higher score indicates a higher likelihood that a person is supportive of government efforts to address criminal justice.
   	-- ^Predictwise score
-  
-/*  , ntl_current.vb_purely_social_networker_demi_decile AS purely_social_network_score
-  	-- ^Such as Facebook. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_personal_voice_social_networker_demi_decile AS personal_voice_social_network_score
-  	-- ^Such as Twitter. 1 represents those most likely and 20 represents those least likely.
-  , ntl_current.vb_professional_social_networker_demi_decile AS professional_social_network_score
-  	-- ^Such as LinkedIn. 1 represents those most likely and 20 represents those least likely. */
       
 FROM dedup1
 
