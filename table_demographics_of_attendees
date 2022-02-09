@@ -11,7 +11,7 @@ CREATE TABLE coc_reporting.vf_attendee_demographics AS
 
 
 WITH base AS (
-SELECT
+SELECT DISTINCT
 	coc_identities.person_id AS person_id
   , coc_member_profile.voterbase_id AS voterbase_id
   --, coc_member_profile.vb_smartvan_id AS smartvan_id
