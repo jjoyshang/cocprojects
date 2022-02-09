@@ -18,6 +18,26 @@ SELECT
   , coc_person_fields.primary_key AS primary_key
   		-- ^Include to join to Every Action and Mobilize
   , coc_person_fields.updated_at
+  
+  /* Calculate the most recently matching person_id to ak_userid, with multiple ak_userids matching to one person_id. 
+  Therefore, I will not be deduping by person_id in this query. But it will be an option to filter in queries referencing 
+  this basetable to only the most recet matching person_id.*/
+  	, CASE WHEN coc_identities.person_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_identities.person_id 
+  	      ORDER BY NVL(coc_identities.updated_at, NULL) DESC NULLS LAST))
+  				ELSE 1
+  			END AS latest_person_id_match 
+  	-- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
+  
+  /*I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is because 
+  TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for those hundreds 
+  of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining to the voterfile 
+  should filter for the latest voterbase_id, to only include one record for each person in the voter file (rather than 
+  potentially having 300 records of the same person). */
+  	, CASE WHEN coc_identities.voterbase_id IS NOT NULL THEN (ROW_NUMBER () OVER (PARTITION BY coc_identities.voterbase_id 
+  	      ORDER BY NVL(coc_identities.updated_at, NULL) DESC NULLS LAST))
+  				ELSE 1
+  			END AS latest_voterbase_id_match 
+  		-- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
 
 -- Start with coc_identities as base, since other tables in tmc_activist_pool refer back to it.
 FROM tmc_activist_pool.coc_identities
@@ -35,20 +55,6 @@ WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
 ),
 
 
--- Deduping to remove duplicates from joining tmc_activist_pool.coc_person_fields, but keeping multiple records of one person if they are in both Every Action and Mobilize.
-deduping1 AS (
-SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY person_id, vendor ORDER BY updated_at DESC) AS person_dupe
-FROM base
-),
-
-
-dedup1 AS (
-SELECT *
-FROM deduping1
-WHERE person_dupe = 1
-)
-,
 
 -- Join to the voter file
 vf_join AS (
@@ -57,6 +63,12 @@ SELECT
   person_id
   , voterbase_id
   , primary_key
+  
+  , /* These fields rank the person_id and voterbase_id matched with an ak_userid, with the most recent match being '1'. 
+This final select includes all ak_userids. But if you wanted to query this table on uique person_ids or voterbase_ids, you could use one of these fields as a filter. */
+  , latest_person_id_match
+  , latest_voterbase_id_match
+  
   , first_name
   , last_name
  
@@ -280,11 +292,11 @@ SELECT
   	-- ^A higher score indicates a higher likelihood that a person is supportive of government efforts to address criminal justice.
   	-- ^Predictwise score
       
-FROM dedup1
+FROM base
 
 -- Inner join since we only want members included in the voter file.
 INNER JOIN ts.ntl_current
- 	ON ntl_current.vb_voterbase_id = dedup1.voterbase_id
+ 	ON ntl_current.vb_voterbase_id = base.voterbase_id
 )
 
 
