@@ -1,6 +1,10 @@
--- * Display demographic information on our engaged members, by joining to information from the voterfile. Demographic info includes age, gender, race, education level, household income, urbanicity etc. *
--- Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an event since Sept 2020, and include fields like event owner and event type.
+/* Display demographic information on our engaged members, by joining to information from the voterfile. Demographic info 
+includes age, gender, race, education level, household income, urbanicity etc.
+Joining to event and participation id in Every Action and Mobilize to be able to filter to members who have completed an 
+event since Sept 2020, and include fields like event owner and event type.
 
+You can query this table by user ids in ActionKit, person ids in the Activist Pool (latest_person_id_match = 1), or 
+voterbase ids (latest_voterbase_id_match = 1). */
 
 DROP TABLE IF EXISTS coc_reporting.vf_attendee_demographics;
 CREATE TABLE coc_reporting.vf_attendee_demographics AS
@@ -17,7 +21,6 @@ SELECT
   , coc_person_fields.vendor AS vendor
   , coc_person_fields.primary_key AS primary_key
   		-- ^Include to join to Every Action and Mobilize
-  , coc_person_fields.updated_at
   
   /* Calculate the most recently matching person_id to ak_userid, with multiple ak_userids matching to one person_id. 
   Therefore, I will not be deduping by person_id in this query. But it will be an option to filter in queries referencing 
@@ -28,7 +31,7 @@ SELECT
   			END AS latest_person_id_match 
   	-- ^ Formatting as a CASE WHEN so that all null values are kept, instead of being collapsed into one.
   
-  /*I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is because 
+  /* I will NOT be using a CTE in this query to filter for only the most recently matched voterbase_id. This is because 
   TMC can match hundreds of person_ids to a single voterbase_id, and I do not want to lose the data for those hundreds 
   of people if this table is needed to join to other databases. INSTEAD, any Selects that are joining to the voterfile 
   should filter for the latest voterbase_id, to only include one record for each person in the voter file (rather than 
@@ -50,8 +53,6 @@ INNER JOIN tmc_activist_pool.coc_person_fields
 	ON coc_identities.person_id = coc_person_fields.person_id
 
 WHERE coc_person_fields.vendor IN ('every_action', 'mobilize')
-  --AND coc_member_profile.vb_tsmart_state = 'CA'
-  	-- !! ^Filter by state. Using to narrow down list to be more workable length, since list is so large.
 ),
 
 
@@ -64,7 +65,7 @@ SELECT
   , voterbase_id
   , primary_key
   
-  , /* These fields rank the person_id and voterbase_id matched with an ak_userid, with the most recent match being '1'. 
+   /* These fields rank the person_id and voterbase_id matched with an ak_userid, with the most recent match being '1'. 
 This final select includes all ak_userids. But if you wanted to query this table on uique person_ids or voterbase_ids, you could use one of these fields as a filter. */
   , latest_person_id_match
   , latest_voterbase_id_match
