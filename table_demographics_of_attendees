@@ -76,17 +76,7 @@ SELECT
 	, ntl_current.vb_voterbase_marital_status AS marital_status
   , ntl_current.vb_vf_party AS political_party
   
-  , CASE
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN '1 Rural (least dense)'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN '2 Rural'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN '3 Suburban'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN '4 Suburban'
-      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN '5 Urban'
-        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN '6 Urban (most dense)'
-       	ELSE ntl_current.ts_tsmart_urbanicity
-    	END AS urbanicity
-  
-	/*, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
+  	/*, ntl_current.ts_tsmart_presidential_general_turnout_score AS presidential_turnout_score
   	-- ^A higher score predicts a higher likelihood that the individual will vote in a Presidential General Election. 
   , ntl_current.ts_tsmart_partisan_score AS democratic_support_score
   	-- ^A higher score predicts a higher likelihood of supporting the Democratic Party.
@@ -96,27 +86,17 @@ SELECT
   	-- ^A higher score indicates a higher likelihood that a person was once, but no longer is, a supporter of President Trump. 
   , ntl_current.ts_tsmart_activist_score AS activist_score
   	-- ^A higher score predicts a higher likelihood that the individual is an activist.*/
+  
+  , CASE
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R1' THEN '1 Rural (least dense)'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'R2' THEN '2 Rural'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S3' THEN '3 Suburban'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'S4' THEN '4 Suburban'
+      	WHEN ntl_current.ts_tsmart_urbanicity = 'U5' THEN '5 Urban'
+        WHEN ntl_current.ts_tsmart_urbanicity = 'U6' THEN '6 Urban (most dense)'
+       	ELSE ntl_current.ts_tsmart_urbanicity
+    	END AS urbanicity
 		 
-	, intp_child_present_in_household AS children_presence
-	  -- ^ The Presence of Children, childrens's age ranges and number of children selections reflects the probable presence of children under age 18 in a given household. Information is sourced from children's age and gender data which is gathered from a variety of sources that includes public records where they may be available, survey data as well as modeled census based information.
-	, intp_number_of_children_in_household AS number_children
-	, intp_estimated_income_range AS household_income
-  	--^  Modeled estimated income level based upon several known demographic attributes, self-reported information and census demographics. Data is assigned at the household level.
-	, intp_networth_range AS household_networth
-  	-- ^ The net worth selection is a demographically based analytical model which predicts the ranges for household net worth. Net worth is calculated by the total assets etitmated to be associated with a household (such as deposit accounts, investments and home value) minus liabilities (such as loans, mortgages and credit card debt).
-	, intp_education AS education_level
-  	-- ^ Education is defined as the level of education completed by the consumer. This is a probabalistic attribute based on self-reported information, surveys, and census sources.
-	, intp_religion AS religion
-  	-- ^ Religion of individual as provided by self reported participants and overlays from participating source data. 14 distinct values
-	, intp_ct_socialusage30_fb AS facebook_30day_usage
-	 -- ^ Has used or visisted Facebook in the last 30 days
-	, intp_ct_socialusage30_insta AS instagram_30day_usage
-	-- ^ Has used or visisted Instagram in the last 30 days
-	, intp_ct_socialusage30_twitter AS twitter_30day_usage
-	-- ^ Has used or visisted Twitter in the last 30 days
-	, intp_ct_socialusage30_youtube AS youtube_30day_usage
-	-- ^ Has used or visisted YouTube in the last 30 days
-   
      , CASE
     	WHEN ts_tsmart_catholic_raw_score >= ts_tsmart_evangelical_raw_score 
           AND ts_tsmart_catholic_raw_score >= ts_tsmart_jewish_raw_score
@@ -161,6 +141,102 @@ SELECT
         WHEN religion_highest_score = 'Non-Religious' THEN ts_tsmart_non_religious_raw_score
      	 ELSE NULL
 		 END AS religion_score_number
+		 
+	, CASE 
+	    WHEN intp_child_present_in_household = 0 THEN 'No Children'
+	    WHEN intp_child_present_in_household = 1 THEN 'Children Present' 
+	    ELSE NULL
+	    END AS children_presence
+	  -- ^ The Presence of Children, childrens's age ranges and number of children selections reflects the probable presence of children under age 18 in a given household. Information is sourced from children's age and gender data which is gathered from a variety of sources that includes public records where they may be available, survey data as well as modeled census based information.
+	, CASE
+	    WHEN intp_number_of_children_in_household = 'A' THEN 'No Children'
+	    WHEN intp_number_of_children_in_household = 'B' THEN 'At least 1, less than 3 children present'
+	    WHEN intp_number_of_children_in_household = 'C' THEN '3 to 5 children present'
+	    WHEN intp_number_of_children_in_household = 'D' THEN '6 or more children present'
+	    ELSE NULL
+	    END AS number_children
+	, CASE 
+	    WHEN intp_estimated_income_range = 'A' THEN '< $20,000'
+	    WHEN intp_estimated_income_range = 'B' THEN '$20,000 - $29,999'
+	    WHEN intp_estimated_income_range = 'C' THEN '$30,000 - $39,999'
+	    WHEN intp_estimated_income_range = 'D' THEN '$40,000 - $49,999'
+	    WHEN intp_estimated_income_range = 'E' THEN '$50,000 - $74,999'
+	    WHEN intp_estimated_income_range = 'F' THEN '$75,000 - $99,999'
+	    WHEN intp_estimated_income_range = 'G' THEN '$100,000 - $124,999'
+	    WHEN intp_estimated_income_range = 'H' THEN '$125,000 - $149,999'
+	    WHEN intp_estimated_income_range = 'I' THEN '$150,000 - $174,999'
+	    WHEN intp_estimated_income_range = 'J' THEN '$175,000 - $199,999'
+	    WHEN intp_estimated_income_range = 'K' THEN '$200,000 - $249,999'
+	    WHEN intp_estimated_income_range = 'L' THEN '> $250,000'
+	    ELSE NULL
+	    END AS household_income
+  	--^  Modeled estimated income level based upon several known demographic attributes, self-reported information and census demographics. Data is assigned at the household level.
+	, CASE
+	    WHEN intp_networth_range = 'A' THEN '< $0'
+	    WHEN intp_networth_range = 'B' THEN '$1 - $4,999'
+	    WHEN intp_networth_range = 'C' THEN '$5,000 - $24,999'
+	    WHEN intp_networth_range = 'D' THEN '$25,000 - $49,999'
+	    WHEN intp_networth_range = 'E' THEN '$50,000 - $74,999'
+	    WHEN intp_networth_range = 'F' THEN '$75,000 - $99,999'
+	    WHEN intp_networth_range = 'G' THEN '$100,000 - $149,999'
+	    WHEN intp_networth_range = 'H' THEN '$150,000 - $249,999'
+	    WHEN intp_networth_range = 'I' THEN '$250,000 - $374,999'
+	    WHEN intp_networth_range = 'J' THEN '$375,000 - $499,999'
+	    WHEN intp_networth_range = 'K' THEN '$500,000 - $749,999'
+	    WHEN intp_networth_range = 'L' THEN '$750,000 - $999,999'
+	    WHEN intp_networth_range = 'M' THEN '> $1,000,000'
+	    ELSE NULL
+	    END AS household_networth
+  	-- ^ The net worth selection is a demographically based analytical model which predicts the ranges for household net worth. Net worth is calculated by the total assets etitmated to be associated with a household (such as deposit accounts, investments and home value) minus liabilities (such as loans, mortgages and credit card debt).
+	, CASE
+	    WHEN intp_education = 'A' THEN 'Completed High School'
+	    WHEN intp_education = 'B' THEN 'Completed College'
+	    WHEN intp_education = 'C' THEN 'Completed Graduate School'
+	    WHEN intp_education = 'D' THEN 'Attended Vocational/Technical'
+	    ELSE NULL
+	    END AS education_level
+  	-- ^ Education is defined as the level of education completed by the consumer. This is a probabalistic attribute based on self-reported information, surveys, and census sources.
+	, CASE
+	    WHEN intp_religion = 'B' THEN 'Buddhist' 
+	    WHEN intp_religion = 'C' THEN 'Catholic' 
+	    WHEN intp_religion = 'E' THEN 'Ethiopian Orthodox' 
+	    WHEN intp_religion = 'G' THEN 'Greek Orthodox' 
+	    WHEN intp_religion = 'H' THEN 'Hindu' 
+	    WHEN intp_religion = 'I' THEN 'Islamic' 
+	    WHEN intp_religion = 'J' THEN 'Jewish' 
+	    WHEN intp_religion = 'K' THEN 'Siku' 
+	    WHEN intp_religion = 'L' THEN 'Lutheran' 
+	    WHEN intp_religion = 'M' THEN 'Mormon' 
+	    WHEN intp_religion = 'O' THEN 'Eastern Orthodox' 
+	    WHEN intp_religion = 'P' THEN 'Protesttant' 
+	    WHEN intp_religion = 'S' THEN 'Shinto' 
+	    ELSE intp_religion
+	    END AS religion
+  	-- ^ Religion of individual as provided by self reported participants and overlays from participating source data. 14 distinct values
+	, CASE 
+	    WHEN intp_ct_socialusage30_fb = 1 THEN 'Yes'
+	    WHEN intp_ct_socialusage30_fb = 0 THEN 'No'
+	    ELSE NULL
+	    END AS facebook_30day_usage
+	 -- ^ Has used or visisted Facebook in the last 30 days
+	, CASE
+	    WHEN intp_ct_socialusage30_insta = 1 THEN 'Yes'
+	    WHEN intp_ct_socialusage30_insta = 0 THEN 'No'
+	    ELSE NULL
+	    END AS instagram_30day_usage
+	-- ^ Has used or visisted Instagram in the last 30 days
+	, CASE
+	    WHEN intp_ct_socialusage30_twitter = 1 THEN 'Yes'
+	    WHEN intp_ct_socialusage30_twitter = 0 THEN 'No'
+	    ELSE NULL
+	    END AS twitter_30day_usage
+	-- ^ Has used or visisted Twitter in the last 30 days
+	, CASE
+	    WHEN intp_ct_socialusage30_youtube = 1 THEN 'Yes'
+	    WHEN intp_ct_socialusage30_youtube = 0 THEN 'No'
+	    ELSE NULL
+	    END AS youtube_30day_usage
+	-- ^ Has used or visisted YouTube in the last 30 days
 		 
   , ntl_current.ts_tsmart_minimum_wage_score AS minimum_wage_score
   	-- ^A higher score indicates a higher likelihood that a person supports raising the minimum wage to $15 or more
