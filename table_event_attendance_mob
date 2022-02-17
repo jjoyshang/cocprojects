@@ -1,7 +1,7 @@
 /* Create a table that pulls together relevant fields from Mobilize for a report on event attendance for the field team. 
 The resulting table includes all unique shifts (event + timeslot) and attendees for that shift. Table also includes event 
 name, date, state, owner, event type, as well as participant zipcode. This table can be queried for specific questions. */
----- Includes records from both Color of Change c4 and Color of Change accounts.
+---- Includes records from both Color of Change c4 and Color of Change PAC accounts.
 
 
 DROP TABLE IF EXISTS coc_reporting.mob_eventattendance;
@@ -14,7 +14,8 @@ SELECT
 	, van_events.van_id AS mob_vaneventid
     		-- ^For joining with events in EveryAction
 	, events.title AS mob_eventname
-        -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
+        /* ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, 
+        they are more likely to match and can be filtered the same. */
   
   ---- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING ----
   			, CASE
@@ -75,7 +76,8 @@ mob_timeslot AS (
 SELECT 
     mob_dedup.*
     , timeslots.id AS mob_timeslotid
-        -- ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an event (they are not a correlary for shifts).
+        /* ^Timeslot id refers to the time for shifts in an event. However, timeslots are not specific to an 
+        event (they are not a correlary for shifts). */
     , timeslots.start_date AS mob_date
     , ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid ORDER BY timeslots.modified_date DESC) AS timeslot_dup
 FROM mob_dedup
@@ -93,8 +95,11 @@ SELECT
   	, van_persons.van_id AS mob_vanuserid
   			-- For joining users with Every Action
   	, participations.postal_code_at_signup AS mob_userzip
-  			-- ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the users zip code informaiton is updated, I know that the participations table has a new entry with new data everytime a user signs up for an event, so it will be the most up to date.
-  	, ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY participations.modified_date DESC) AS user_dup
+  			/* ^Choosing zip code from when users sign up for an event instead of users table. While I am not sure how the 
+  			users zip code informaiton is updated, I know that the participations table has a new entry with new data 
+  			everytime a user signs up for an event, so it will be the most up to date. */
+  	, ROW_NUMBER () OVER (PARTITION BY mob_eventid, mob_timeslotid, mob_userid ORDER BY participations.modified_date DESC) 
+  	    AS user_dup
   			-- ^For deduping per person, per event and shift.
   	, van_persons.modified_date AS van_person_moddate
   			-- ^For deduping later.
@@ -151,15 +156,18 @@ FROM mob_deduping2
 ),
 
 
+
 /* Events in our c4 Mobilize account. */
 mob_c4_base AS (
 SELECT
     coc_mobilize_c4_events.id AS mob_c4_eventid
-        -- ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and shift contacts attended.
+        /* ^Since timeslot id is not specific to an event, the event id is also needed to determine the event and 
+        shift contacts attended. */
   	, coc_mobilize_c4_van_events.van_id AS mob_c4_vaneventid
     		-- ^For joining with events in EveryAction
   	, coc_mobilize_c4_events.title AS mob_c4_eventname
-        -- ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, they are more likely to match and can be filtered the same.
+        /* ^Using van event name instead of event name, since the van event name syncs to Every Action. Therefore, 
+        they are more likely to match and can be filtered the same. */
   
   ---- THE FOLLOWING INDENTED TABLES ARE FOR FILTERING ----
   			, CASE
