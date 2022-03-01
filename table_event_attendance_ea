@@ -8,7 +8,7 @@ DROP TABLE IF EXISTS coc_reporting.ea_eventattendance;
 CREATE TABLE coc_reporting.ea_eventattendance AS
 
 
-WITH ea_base AS (
+WITH base1 AS (
 SELECT
     coc_events.eventid AS ea_eventid
     , LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS ea_date
@@ -27,68 +27,106 @@ SELECT
         END AS ea_eventtype
         -- ^Relabeling Allies events from Courtwatch to Training
   			-- ^Included for filtering.
-      , coc_locations.state As ea_eventstate 
+     , coc_locations.state As ea_eventstate 
         -- ^Included for filtering.
-  	, coc_eventsignups.vanid AS ea_attendeesid
-  	, coc_eventsignups.eventrolename AS ea_eventrole
-  	, coc_contacts_mym.firstname AS ea_firstname
-  	, coc_contacts_mym.lastname AS ea_lastname
-  	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
-  	, ROW_NUMBER () OVER (PARTITION BY coc_events.eventid, coc_eventsignups.vanid ORDER BY coc_eventsignupsstatuses.datemodified DESC) AS ea_signupdupe
-  	-- ^For deduping eventsignups
-
-  -- Included for deduping addresses below
-  	, coc_contactsaddresses_mym.datemodified AS address_datemodified
-
+    , ROW_NUMBER () OVER (PARTITION BY coc_events.eventid ORDER BY coc_eventslocations.datemodified DESC) AS rank_eventlocation
+        
 FROM tmc_van.coc_events
-
-LEFT JOIN tmc_van.coc_eventsignups
-	ON coc_events.eventid = coc_eventsignups.eventid
-LEFT JOIN tmc_van.coc_eventsignupsstatuses
- 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
 LEFT JOIN tmc_van.coc_eventslocations
 	ON coc_eventslocations.eventid = coc_events.eventid
      -- ^In EA, coc_eventslocations table joins event ids to a location ids (which is why I also need to join coc_locations table). However, this table does not include addresses.
 LEFT JOIN tmc_van.coc_locations
 	ON coc_locations.locationid = coc_eventslocations.locationid
-LEFT JOIN tmc_van.coc_contactsaddresses_mym
-  ON coc_contactsaddresses_mym.vanid = coc_eventsignups.vanid
-LEFT JOIN tmc_van.coc_contacts_mym
-  ON coc_contacts_mym.vanid = coc_eventsignups.vanid
 
-WHERE coc_eventsignupsstatuses.eventstatusname = 'Completed'
-    -- ^Filter to only count event sign ups were the contact was labeled as Completed. Otherwise, would include all statuses, including Scheduled and No-Show etc.
-  AND coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
+WHERE coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
     -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
   AND coc_events.eventname NOT LIKE '%Cancelled%'
     -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
 )
 
-, dedup_signups AS (
-SELECT * 
-  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY address_datemodified DESC) AS ea_addressdupe
-FROM ea_base
-WHERE ea_signupdupe = 1
+, dedup1 AS (
+SELECT *
+FROM base1
+WHERE rank_eventlocation = 1
 )
 
+, base2 AS (
+SELECT dedup1.*
+  	, coc_eventsignups.vanid AS ea_attendeesid
+  	, coc_eventsignups.eventrolename AS ea_eventrole
+    , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid /*, ea_eventrole*/ ORDER BY coc_eventsignupsstatuses.datemodified DESC) AS rank_signupstatuses
 
-/* In this CTE we are bringing in email addresses. This is because this version of the code includes people with the 
-'Host Committee' role, to capture volunteer hosts. However, we don't want to include attendees who are actually COC staff.
-In the final select, we will filter on email addresses to take out COC emails. */
-, add_emails AS (
-SELECT dedup_signups.*
-  , email
-  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY emails.datemodified DESC) AS emaildupe
-    -- ^ For deduping emails by the most recently modified.
-FROM dedup_signups
-LEFT JOIN tmc_van.coc_contactsemails_mym AS emails
-  ON dedup_signups.ea_attendeesid = emails.vanid
-WHERE ea_addressdupe = 1
+FROM dedup1
+LEFT JOIN tmc_van.coc_eventsignups
+	ON dedup1.ea_eventid = coc_eventsignups.eventid
+LEFT JOIN tmc_van.coc_eventsignupsstatuses
+ 	ON coc_eventsignups.eventsignupid = coc_eventsignupsstatuses.eventsignupid
+
+WHERE coc_eventsignupsstatuses.eventstatusname = 'Completed'
 )
-  
-  
+
+, dedup2 AS (
+SELECT *
+FROM base2
+WHERE rank_signupstatuses = 1
+)
+
+, base3 AS (
 SELECT
-		ea_eventid
+  dedup2.*
+    , coc_contacts_mym.firstname AS ea_firstname
+  	, coc_contacts_mym.lastname AS ea_lastname
+  	, coc_contactsaddresses_mym.city AS ea_attendeescity
+  	, coc_contactsaddresses_mym.state AS ea_attendeesstate
+  	, coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
+    , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsaddresses_mym.datemodified DESC) AS rank_addresses
+FROM dedup2
+LEFT JOIN tmc_van.coc_contacts_mym
+  ON coc_contacts_mym.vanid = dedup2.ea_attendeesid
+LEFT JOIN tmc_van.coc_contactsaddresses_mym
+  ON coc_contactsaddresses_mym.vanid = dedup2.ea_attendeesid
+)
+
+, dedup3 AS (
+SELECT *
+FROM base3
+WHERE rank_addresses = 1
+)
+
+, base4 AS (
+SELECT
+  dedup3.*
+  , coc_contactsemails_mym.email AS ea_attendeesemail
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsemails_mym.datemodified DESC) AS rank_email
+FROM dedup3
+LEFT JOIN tmc_van.coc_contactsemails_mym
+  ON dedup3.ea_attendeesid = coc_contactsemails_mym.vanid
+)
+
+, dedup4 AS (
+SELECT *
+FROM base4
+WHERE rank_email = 1
+)
+
+, base5 AS (
+SELECT
+  dedup4.*
+  , coc_contactsphones_mym.phone AS ea_attendeesphone
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsphones_mym.datemodified DESC) AS rank_phone
+FROM dedup4
+  LEFT JOIN tmc_van.coc_contactsphones_mym
+    ON dedup4.ea_attendeesid = coc_contactsphones_mym.vanid
+)
+
+, dedup5 AS (
+SELECT *
+FROM base5
+WHERE rank_phone= 1
+)
+
+SELECT
+  ea_eventid
     , CASE WHEN ea_eventid IS NOT NULL
   			THEN 'Every Action'
   			ELSE NULL
@@ -102,15 +140,16 @@ SELECT
   	, ea_eventrole
     , ea_firstname
     , ea_lastname
-    , email AS ea_attendeesemail
-  	, ea_attendeeszip
-  -- ^Selecting only fields that I want in the final table. Removing fields for deduping.
-    
-FROM add_emails
-WHERE emaildupe = 1
-  AND email NOT LIKE '%@colorofchange.org'
+    , ea_attendeescity
+    , ea_attendeesstate
+    , ea_attendeeszip
+    , ea_attendeesemail
+    , ea_attendeesphone
+
+  FROM dedup5
+  WHERE ea_attendeesemail NOT LIKE '%@colorofchange.org'
     -- ^ Filter out COC emails, which we assume are staff and not volunteers.
-  AND email NOT IN (
+  AND ea_attendeesemail NOT IN (
     'Meleemewilson@gmail.com'
     , 'jvharris02@gmail.com'
     , 'derrickquarles@yahoo.com'
@@ -133,7 +172,7 @@ WHERE emaildupe = 1
     , 'mnblackjoy@gmail.com'
   )
     -- ^ Filter out personal emails of COC staff that we're seeing in EA
-  
+
 ;
 
 
