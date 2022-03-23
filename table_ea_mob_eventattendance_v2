@@ -1,0 +1,106 @@
+/* Create a table combining event and attendance data from EveryAction and Mobilize PAC & c4. 
+V2 brings in event and attendee data from EveryAction and only the event owner from Mobilize. This because EveryAction serves as our
+source if truth for event data, is where MBT can export event data, and where we have the ability to correct data. Event owner is the
+only field that doesn't sync to EveryAction. */
+
+
+-- Every Action base table: https://platform.civisanalytics.com/spa/#/scripts/sql/100953079
+-- Mobilize base table: https://platform.civisanalytics.com/spa/#/scripts/sql/101066205
+-- V1 of this table (Retired): https://platform.civisanalytics.com/spa/#/scripts/sql/103290282
+
+--
+GRANT SELECT ON coc_reporting.rfm_regions TO GROUP coc;
+GRANT ALL ON coc_reporting.rfm_regions TO jharris1;
+-- ^ Granting access to table, which is updated via an import:  https://platform.civisanalytics.com/spa/#/imports/106055368 
+
+
+DROP TABLE IF EXISTS coc_reporting.ea_mob_eventattendance;
+CREATE TABLE coc_reporting.ea_mob_eventattendance AS
+
+WITH mobc4 AS (
+SELECT 
+  van_id
+  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+  , ROW_NUMBER () OVER (PARTITION BY van_id ORDER BY van_events.modified_date DESC) AS rank_vanjoin
+FROM coc_mobilize_c4.coc_mobilize_c4_van_events AS van_events
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_events AS events
+  ON van_events.event_id = events.id
+
+--WHERE events.created_date BETWEEN '2022-02-01' AND (SELECT GETDATE ()) -- ! For testing !
+--WHERE events.created_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
+)
+
+, c4_dedup AS (
+SELECT *
+FROM mobc4
+WHERE rank_vanjoin = 1
+)
+
+, mobpac AS (
+SELECT 
+  van_id
+  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+  , ROW_NUMBER () OVER (PARTITION BY van_id ORDER BY van_events.modified_date DESC) AS rank_vanjoin
+FROM  coc_mobilize_pac.van_events
+LEFT JOIN coc_mobilize_pac.events
+  ON van_events.event_id = events.id
+
+--WHERE events.created_date BETWEEN '2022-02-01' AND (SELECT GETDATE ()) -- ! For testing !
+--WHERE events.created_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
+)
+
+, pac_dedup AS (
+SELECT *
+FROM mobc4
+WHERE rank_vanjoin = 1
+)
+
+, mob_combined AS (
+SELECT van_id, mob_eventowner FROM c4_dedup
+UNION
+SELECT van_id, mob_eventowner FROM pac_dedup
+)
+
+, temp_region AS (
+SELECT
+  *
+  , CASE WHEN rfm_regions.end_date IS NULL THEN ((SELECT GETDATE ()))
+  		ELSE rfm_regions.end_date
+  	END AS end_date_dailyupdate
+FROM coc_reporting.rfm_regions
+)
+
+SELECT
+  ea_eventid AS unique_eventid
+  , ea_source AS sourceplatform
+  , ea_entity AS entity
+  , ea_date AS event_date
+  , ea_eventname AS event_name
+  , ea_eventtype AS event_type
+  , ea_eventstate AS event_state
+  , NVL(temp_region.region, 'Unknown') AS rfm_region
+  	-- ^Simplifying this field. Formally referenced location of the event as "event_region". Now only reflects the region of the event owner, as defined by how staff are organized.
+  , mob_eventowner AS event_owner
+  , ea_attendeesid AS attendee_id
+  , ea_eventrole AS attendee_role
+  , ea_firstname AS attendee_firstname
+  , ea_lastname AS attendee_lastname
+  , ea_attendeescity AS attendee_city
+  , ea_attendeesstate AS attendee_state
+  , ea_attendeeszip AS attendee_zip
+  , ea_attendeesemail AS attendee_email
+  , ea_attendeesphone AS attendee_phone
+  , ROW_NUMBER () OVER (PARTITION BY attendee_id ORDER BY event_date DESC) AS latest_attendance_rank
+  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+FROM coc_reporting.ea_eventattendance
+LEFT JOIN mob_combined
+  ON mob_combined.van_id = ea_eventattendance.ea_eventid
+LEFT JOIN temp_region
+  ON mob_eventowner = temp_region.event_owner
+  AND ea_eventattendance.ea_date >= temp_region.start_date
+  AND ea_eventattendance.ea_date < temp_region.end_date_dailyupdate
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.ea_mob_eventattendance TO GROUP coc;
+GRANT ALL ON coc_reporting.ea_mob_eventattendance TO jshang, jharris1;
