@@ -14,15 +14,15 @@ vanid
 , gender  -- Only populates when this field is used as a filter
 , race  -- Only populates when this field is used as a filter
 , presidential_turnout_score  -- Only populates when this field is used as a filter
-, count_event_attendances  -- Count number of Completed events in the last 180 days
-, count_event_signups  -- Count number of events Sign Ups in the last 180 days
-, count_p2p_text_received  -- Count number of text conversation received through ThruText in the last 1 week, based on phone number match
+, count_event_attendances_180days  -- Count number of Completed events in the last 180 days
+, count_event_signups_180days  -- Count number of events Sign Ups in the last 180 days
+, count_p2p_text_received_1wwek  -- Count number of text conversation received through ThruText in the last 1 week, based on phone number match
 , ak_subscribed  -- Flag whether person is subscribed in ActionKit, based on email match
-, count_ak_emails_received  -- Count number of emails received through ActionKit in the last 1 week
-, count_ak_actions  -- Count number of actions in ActionKit in the last 180 days (that are not unsubscribes)
+, count_ak_emails_received_1week  -- Count number of emails received through ActionKit in the last 1 week
+, count_ak_actions_180days  -- Count number of actions in ActionKit in the last 180 days (that are not unsubscribes)
 , opt_in_mobile_commons  -- Flag whether person is opted in to Mobile Commons, based on phone number match
-, count_sms_text_received  -- Count number of p2p text conversations received in the last 1 week
-, count_donations  -- Count number of donations through ActBlue in the last 180 days, based on ActionKit user id
+, count_sms_text_received_1week  -- Count number of p2p text conversations received in the last 1 week
+, count_donations_180days  -- Count number of donations through ActBlue in the last 180 days, based on ActionKit user id
  
 Other filters included in the code (which are not reflected in output fields):
  - Zipcode radius. Include people a number of miles in a radius out from a specific zipcode.
@@ -86,7 +86,7 @@ LEFT JOIN coc_reporting.vf_attendee_demographics AS demos
 )
  
  
-/* This CTE allows the requester to choose whether geograph fields should be sourced from EveryAction or the voterfile by editing the match_key.
+/* This CTE allows the requester to choose whether geography fields should be sourced from EveryAction or the voterfile by editing the match_key.
 */
 , vf_geography AS (
 SELECT
@@ -262,7 +262,7 @@ Refers to coc_reporting.ea_mob_eventattedance table: https://platform.civisanaly
 , ea_events AS (
 SELECT
  vanid
- , COUNT(ea_mob_eventattendance.*) AS count_event_attendances
+ , COUNT(ea_mob_eventattendance.*) AS count_event_attendances_180days
 FROM zip_radius
 INNER JOIN coc_reporting.ea_mob_eventattendance
  ON vanid = attendee_id
@@ -276,7 +276,7 @@ Refers to coc_reporting.ea_eventsignsups code: https://platform.civisanalytics.c
 , ea_attendances AS (
 SELECT
  zip_radius.vanid
- , COUNT(DISTINCT (event_id ||'.'|| event_shiftid)) AS count_event_signups
+ , COUNT(DISTINCT (event_id ||'.'|| event_shiftid)) AS count_event_signups_180days
 FROM zip_radius
 INNER JOIN coc_reporting.ea_eventsignups
  ON zip_radius.vanid = ea_eventsignups.vanid
@@ -305,7 +305,7 @@ match back in the final select. */
 , donations AS (
 SELECT
  ak.email
- , COUNT(donations_base.transaction_id) AS count_donations
+ , COUNT(donations_base.transaction_id) AS count_donations_180days
 FROM ak
 LEFT JOIN coc_reporting.donation_base_20210226 AS donations_base
  ON ak.ak_userid = donations_base.user_id
@@ -318,7 +318,7 @@ GROUP BY 1
 , ak_emails AS (
 SELECT
  zip_radius.email
- , COUNT(core_usermailing.mailing_id) AS count_ak_emails_received
+ , COUNT(core_usermailing.mailing_id) AS count_ak_emails_received_1week
 FROM zip_radius
 INNER JOIN coc_ak.core_user
  ON zip_radius.email = core_user.email
@@ -334,7 +334,7 @@ GROUP BY 1
 , ak_actions AS (
 SELECT
  zip_radius.email
- , COUNT(core_action.id) AS count_ak_actions
+ , COUNT(core_action.id) AS count_ak_actions_180days
 FROM zip_radius
 INNER JOIN coc_ak.core_user
  ON zip_radius.email = core_user.email
@@ -375,7 +375,7 @@ INNER JOIN coc_mobilecommons.profiles
 , mobile_commons_messages AS (
 SELECT
  zip_radius.phone
- , COUNT(sent_messages.broadcast_id) AS count_sms_text_received
+ , COUNT(sent_messages.broadcast_id) AS count_sms_text_received_1week
 FROM zip_radius
 INNER JOIN coc_mobilecommons.profiles
  ON zip_radius.phone = RIGHT(profiles.phone_number, 10)
@@ -393,7 +393,7 @@ GROUP BY 1
 , thrutext AS (
 SELECT
  zip_radius.phone
- , COUNT(DISTINCT conversation_id) AS count_p2p_text_received
+ , COUNT(DISTINCT conversation_id) AS count_p2p_text_received_1week
 FROM zip_radius
 INNER JOIN tmc_thrutext.coc_messages
  ON zip_radius.phone = RIGHT(coc_messages.contact_phone, 10)
@@ -428,15 +428,15 @@ SELECT
    , CASE WHEN turnoutscore_flag <> 0
        THEN presidential_turnout_score_filter ELSE NULL
        END AS presidential_turn_out_score
- , ea_events.count_event_attendances
- , ea_attendances.count_event_signups
- , thrutext.count_p2p_text_received
+ , ea_events.count_event_attendances_180days
+ , ea_attendances.count_event_signups_180days
+ , thrutext.count_p2p_text_received_1week
  , ak.ak_subscribed
- , ak_emails.count_ak_emails_received
- , ak_actions.count_ak_actions
+ , ak_emails.count_ak_emails_received_1week
+ , ak_actions.count_ak_actions_180days
  , mobile_commons.opt_in_mobile_commons
- , mobile_commons_messages.count_sms_text_received
- , donations.count_donations
+ , mobile_commons_messages.count_sms_text_received_1week
+ , donations.count_donations_180days
 FROM zip_radius
 LEFT JOIN ea_events
  ON zip_radius.vanid = ea_events.vanid
