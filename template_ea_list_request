@@ -64,13 +64,28 @@ WHERE attendee_id IS NOT NULL
  {{filter_event_date}} AND event_date BETWEEN '{{start_date}}' AND '{{end_date}}'
 )
  
+
+ /* This CTE gives the ability to filter by the number of events a person has attended within a time range. */
+, ea_2 AS (
+SELECT 
+  ea.*
+  , COUNT(DISTINCT unique_eventid) AS count_attendances
+FROM ea
+LEFT JOIN coc_reporting.ea_mob_eventattendance 
+  ON ea.vanid = ea_mob_eventattendance.attendee_id
+{{filter_count_attendances}} WHERE event_date BETWEEN '{{count_attendances_start_date}}' AND '{{count_attendances_end_date}}'
+GROUP BY 1,2,3,4,5,6,7,8,9
+HAVING count_attendances >= {{count_attendances}} -- default 0
+)
+
+
 /* This CTE uses vanids from the previous "ea" CTE and joins to the voterfile demographics table (which uses TMC person fields to match our members). The CTE adds fields
 that we may optionally want to filter on and geography fields.
 Refers to coc_reporting.vf_attendee_demographics code: https://platform.civisanalytics.com/spa/#/scripts/sql/101610422
 */
 , vf_join AS (
 SELECT
- ea.vanid
+ ea_2.vanid
  , age AS age_filter
  , gender AS gender_filter
  , race AS race_filter
@@ -78,9 +93,9 @@ SELECT
  , city AS vf_city
  , state AS vf_state
  , zip AS vf_zip
-FROM ea
+FROM ea_2
 LEFT JOIN coc_reporting.vf_attendee_demographics AS demos
- ON ea.vanid = demos.attendee_id
+ ON ea_2.vanid = demos.attendee_id
  AND latest_voterbase_id_match = 1 -- needed to only include the demos.attendee_id that TMC most recently matched to a voter file records
  AND latest_attendance_rank = 1 -- needed to only one attendance record for each demos.attendee_id
 )
