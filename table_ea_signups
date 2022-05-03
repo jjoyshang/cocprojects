@@ -11,7 +11,7 @@ SELECT DISTINCT
   , ea_eventtype AS event_type
 FROM coc_reporting.ea_eventattendance
 WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
-  ea_date BETWEEN '2021-01-01' AND '2021-11-30'
+  ea_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
   -- ^ Filtering to the analysis window
   --event_id = '750036570'
   -- ^ event with multiple inputtype and contacts records, for checking
@@ -71,8 +71,7 @@ WHERE emaildupe = 1
     , 'chuniq.inpower@gmail.com'
     , 'cpetty1992@gmail.com'
     , 'mnblackjoy@gmail.com'
-  )
-    -- ^ Filter out personal emails of COC staff that we're seeing in EA
+  ) -- ^ Filter out personal emails of COC staff that we're seeing in EA
 )
 
 , base AS (
@@ -87,38 +86,38 @@ SELECT
         ELSE NULL
       END AS temp_statuses_api
     -- ^ Reformatting statuses created by API to the platform name
-  , NVL(contacttypes.contacttypename, temp_statuses_api, input.inputtypename)  AS status_createdby
-  /* ^ Cascading to the most specific name of how a status is created. The most specific is the contacttypename which shows
-  the type of real contact, such as a One on One. The next the name of the API that created the status, if relevant. Last 
-  is inputtypename which shows VPB, Bulk, Manual, or API.
-  */
+  , NVL(contacttypes.contacttypename, temp_statuses_api, input.inputtypename)  AS status_createdby_temp
+    /* ^ Cascading to the most specific name of how a status is created. The most specific is the contacttypename which shows
+    the type of real contact, such as a One on One. The next the name of the API that created the status, if relevant. Last 
+    is inputtypename which shows VPB, Bulk, Manual, or API. */
   , CASE WHEN temp_statuses_api IS NULL
       THEN NVL(contacts.canvassedby, statuses.createdby)
       ELSE NULL
     END AS status_creatorid
-  /* ^ First, only taking user ids when the status creator is NOT an api. If it is an api, I will get the api id.
-  Then cascading to the most specific user of which person created a status. The contacts.canvassedby shows who talked to the 
-  member in a real contact, such as a One on One. The statuses.createdby shows the name of the EA user who added
-  the status.
-  */
-  , CASE WHEN status_createdby = 'API' AND status_creatorid IS NOT NULL THEN 'Manual'
-      ELSE status_createdby
-      END AS status_createdby_clean
+    /* ^ First, only taking user ids when the status creator is NOT an api. If it is an api, I will get the api id.
+    Then cascading to the most specific user of which person created a status. The contacts.canvassedby shows who talked to the 
+    member in a real contact, such as a One on One. The statuses.createdby shows the name of the EA user who added
+    the status. */
+  , CASE WHEN status_createdby_temp = 'API' AND status_creatorid IS NOT NULL THEN 'Manual'
+      ELSE status_createdby_temp
+      END AS status_createdby
+    /* ^ Seeing in the backend that Manual statuses are erroneously being called API, when in EA they are manually added by a 
+    user. This field is fixing this by saying, when the status is created by API but it was created by a user in EA, call
+    it 'Manual' instead. */
   , statuses.eventstatusname AS attendee_status
   , NVL(contacts.datecanvassed, statuses.datecreated) AS status_datecreated
-  /* ^ Cascading the most accurate date to least accurate. For a real contact, the contacts.datecanvassed will show when we
-  talked to the member. If not, it will show the date the status was added.
-  */
+    /* ^ Cascading the most accurate date to least accurate. For a real contact, the contacts.datecanvassed will show when we
+    talked to the member. If not, it will show the date the status was added.*/
   , statuses.datemodified AS status_datemodified
   , CASE WHEN 
       attendee_status IN ('No Show', 'Completed') THEN
         ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, attendees_clean.vanid ORDER BY status_datemodified DESC)
       ELSE 1
     END AS noshow_completes_rank
-    /* For No Shows or Completes, I only want the most recently updated status. I do not want duplicates if this has been
-    changed or added multiple times.
-    Rank them with the most recently updated as 1. Every other status is also 1.
-    In the next CTE I fill filter this. */
+      /* For No Shows or Completes, I only want the most recently updated status. I do not want duplicates if this has been
+        changed or added multiple times.
+     Rank them with the most recently updated as 1. Every other status is also 1.
+      In the next CTE I fill filter this. */
 FROM attendees_clean
 LEFT JOIN tmc_van.coc_eventsignupsstatuses AS statuses
 	ON attendees_clean.attendee_signupid = statuses.eventsignupid
