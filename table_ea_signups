@@ -155,6 +155,7 @@ SELECT
   , event_shiftid
   , event_shiftdate
   , dedup2.vanid
+  , attendee_email
   , attendee_role
   , attendee_status
   , attendee_signupid
