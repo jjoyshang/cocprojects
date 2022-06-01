@@ -75,7 +75,7 @@ LEFT JOIN coc_reporting.ea_mob_eventattendance
   ON ea.vanid = ea_mob_eventattendance.attendee_id
 {{filter_count_attendances}} WHERE event_date BETWEEN '{{count_attendances_start_date}}' AND '{{count_attendances_end_date}}'
 GROUP BY 1,2,3,4,5,6,7,8,9
-HAVING count_attendances >= {{count_attendances}} -- default 0
+HAVING count_attendances >= {{count_attendances}}
 )
 
 
@@ -121,11 +121,11 @@ on whether the match_key is edited. In this CTE, filters for location can be add
 */
 , base AS (
 SELECT
- ea.vanid
- , ea.first_name
- , ea.last_name
- , ea.email
- , ea.phone
+ ea_2.vanid
+ , ea_2.first_name
+ , ea_2.last_name
+ , ea_2.email
+ , ea_2.phone
  , vf_join.age_filter
  , vf_join.gender_filter
  , vf_join.race_filter
@@ -137,16 +137,16 @@ SELECT
    , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_state ELSE ea_state END AS state
    , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_zip ELSE ea_zip END AS zipcode
  , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
-FROM ea
+FROM ea_2
 LEFT JOIN vf_join
- ON ea.vanid = vf_join.vanid
+ ON ea_2.vanid = vf_join.vanid
 LEFT JOIN vf_geography
- ON ea.vanid = vf_geography.vanid
- AND ea.match_key = vf_geography.match_key
-WHERE ea.vanid IS NOT NULL
+ ON ea_2.vanid = vf_geography.vanid
+ AND ea_2.match_key = vf_geography.match_key
+WHERE ea_2.vanid IS NOT NULL
 /* FILTER LOCATION */
  {{filter_state}} AND state IN ({{states}})
- {{filter_city}} AND city IN ({{cities}})
+ {{filter_city}} AND UPPER(city) IN ({{cities}})
  {{filter_zipcode}} AND zipcode IN ({{zipcodes}})
 )
  
@@ -277,7 +277,7 @@ Refers to coc_reporting.ea_mob_eventattedance table: https://platform.civisanaly
 , ea_events AS (
 SELECT
  vanid
- , COUNT(ea_mob_eventattendance.*) AS count_event_attendances_180days
+ , COUNT(DISTINCT unique_eventid) AS count_event_attendances_180days
 FROM zip_radius
 INNER JOIN coc_reporting.ea_mob_eventattendance
  ON vanid = attendee_id
@@ -303,7 +303,7 @@ GROUP BY 1
 /* Flag for a current ActionKit email subscriber. Matches EveryAction user to Actionkiit through email address. */
 , ak AS (
 SELECT
- zip_radius.email
+ zip_radius.vanid
  , core_user.id AS ak_userid
  , 'Y' AS ak_subscribed
 FROM zip_radius
@@ -319,7 +319,7 @@ Joins to the coc_reporting.donation_base_20210226 table through the ActionKit us
 match back in the final select. */
 , donations AS (
 SELECT
- ak.email
+ ak.vanid
  , COUNT(donations_base.transaction_id) AS count_donations_180days
 FROM ak
 LEFT JOIN coc_reporting.donation_base_20210226 AS donations_base
@@ -332,7 +332,7 @@ GROUP BY 1
 /*  Count number of emails received in the last week. Matches EveryAction user to Actionkit through email address. */
 , ak_emails AS (
 SELECT
- zip_radius.email
+ zip_radius.vanid
  , COUNT(core_usermailing.mailing_id) AS count_ak_emails_received_1week
 FROM zip_radius
 INNER JOIN coc_ak.core_user
@@ -348,7 +348,7 @@ GROUP BY 1
 /* Count number of AK actions in the last 6 months (180 days). Matches EveryAction user to Actionkit through email address. */
 , ak_actions AS (
 SELECT
- zip_radius.email
+ zip_radius.vanid
  , COUNT(core_action.id) AS count_ak_actions_180days
 FROM zip_radius
 INNER JOIN coc_ak.core_user
@@ -376,7 +376,7 @@ GROUP BY 1
 /* Flag if someone is currently opted in to Mobile Commons. Matches EveryAction user to Mobile Commons through phone number. */
 , mobile_commons AS (
 SELECT
- zip_radius.phone
+ zip_radius.vanid
  , 'Y' AS opt_in_mobile_commons
 FROM zip_radius
 INNER JOIN coc_mobilecommons.profiles
@@ -389,7 +389,7 @@ INNER JOIN coc_mobilecommons.profiles
 /* Count number of messages (broadcasts) received in the last one week. Matches EveryAction user to Mobile Commons through phone number. */
 , mobile_commons_messages AS (
 SELECT
- zip_radius.phone
+ zip_radius.vanid
  , COUNT(sent_messages.broadcast_id) AS count_sms_text_received_1week
 FROM zip_radius
 INNER JOIN coc_mobilecommons.profiles
@@ -407,7 +407,7 @@ GROUP BY 1
 /* Count number of p2p text conversations received in the last one week. Matches EveryAction user to ThruText through phone number. */
 , thrutext AS (
 SELECT
- zip_radius.phone
+ zip_radius.vanid
  , COUNT(DISTINCT conversation_id) AS count_p2p_text_received_1week
 FROM zip_radius
 INNER JOIN tmc_thrutext.coc_messages
@@ -458,16 +458,16 @@ LEFT JOIN ea_events
 LEFT JOIN ea_attendances
  ON zip_radius.vanid = ea_attendances.vanid
 LEFT JOIN ak
- ON zip_radius.email = ak.email
+ ON zip_radius.vanid = ak.vanid
 LEFT JOIN donations
- ON zip_radius.email = donations.email
+ ON zip_radius.vanid = donations.vanid
 LEFT JOIN ak_emails
- ON zip_radius.email = ak_emails.email
+ ON zip_radius.vanid = ak_emails.vanid
 LEFT JOIN ak_actions
- ON zip_radius.email = ak_actions.email
+ ON zip_radius.vanid = ak_actions.vanid
 LEFT JOIN mobile_commons
- ON zip_radius.phone = mobile_commons.phone
+ ON zip_radius.vanid = mobile_commons.vanid
 LEFT JOIN mobile_commons_messages
- ON zip_radius.phone = mobile_commons_messages.phone
+ ON zip_radius.vanid = mobile_commons_messages.vanid
 LEFT JOIN thrutext
- ON zip_radius.phone = thrutext.phone
+ ON zip_radius.vanid = thrutext.vanid
