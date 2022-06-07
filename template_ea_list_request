@@ -1,5 +1,5 @@
 /* EA List Request
-This script is used as a template to generate lists of people from EveryAction.
+This script is used as a template to generate lists of people from EveryAction who have attended an event.
  
 OUTPUT FIELDS:
 vanid
@@ -48,7 +48,7 @@ SELECT DISTINCT
  , attendee_lastname AS last_name
  , attendee_email AS email
  , attendee_phone AS phone
- , attendee_city AS ea_city
+ , UPPER(attendee_city) AS ea_city
  , attendee_state AS ea_state
  , attendee_zip AS ea_zip
  , 'a'::varchar AS match_key  -- Artificial field for matching geography in later CTE
@@ -90,7 +90,7 @@ SELECT
  , gender AS gender_filter
  , race AS race_filter
  , presidential_turnout_score AS presidential_turnout_score_filter
- , city AS vf_city
+ , UPPER(city) AS vf_city
  , state AS vf_state
  , zip AS vf_zip
 FROM ea_2
@@ -146,7 +146,7 @@ LEFT JOIN vf_geography
 WHERE ea_2.vanid IS NOT NULL
 /* FILTER LOCATION */
  {{filter_state}} AND state IN ({{states}})
- {{filter_city}} AND UPPER(city) IN ({{cities}})
+ {{filter_city}} AND city IN ({{cities}})
  {{filter_zipcode}} AND zipcode IN ({{zipcodes}})
 )
  
