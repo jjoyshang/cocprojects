@@ -115,6 +115,7 @@ a time range.
         , ak_city
         , ak_state
         , ak_zip
+        , count_received
     FROM ak_mailings
 )
 
