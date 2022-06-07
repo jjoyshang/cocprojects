@@ -1,0 +1,594 @@
+/* AK List Request
+This script is used as a template to generate lists of people from ActionKit.
+
+Output fields:
+ak_userid
+, first_name
+, last_name
+, email
+, phone
+, city  -- Can filter by this field
+, state  -- Can filter by this field
+, zipcode  -- Can filter by this field
+, age  -- Only populates when this field is used as a filter
+, gender  -- Only populates when this field is used as a filter
+, race  -- Only populates when this field is used as a filter
+, presidential_turnout_score  -- Only populates when this field is used as a filter
+, count_ak_emails_received_1week
+, count_ak_actions_180days
+, count_donations_180days
+, opt_in_mobile_commons
+, count_sms_text_received_1week
+, count_event_attendances_180days
+, count_event_signups_180days
+, count_p2p_text_received_1week
+
+Other filters included in the code (which are not reflected in output fields):
+  - Whether someone is Active (on List 1 but not List 8)
+  
+  - Whether someone has RECEIVED specific mailing(s) (by mailing id)
+  - Whether someone has RECEIVED mailings with specific tag(s)
+  - Whether someone has RECEIVED mailings within a date range
+  
+  - Whether someone has OPENED specific mailing(s) (by mailing id)
+  - Whether someone has OPENED mailings with specific tag(s)
+  - Whether someone has OPENED mailings within a date range
+  - Whether someone has OPENED __ number or more mailings (influenced by other OPENS filters. For instance, you could combine them to say people who have opened 3 or more mailers in the last 2 months.)
+  
+  - Whether someone has TAKEN ACTION on specific mailing(s) (by mailing id)
+  - Whether someone has TAKEN ACTION on with specific tag(s)
+  - Whether someone has TAKEN ACTION on within a date range
+  - Whether someone has TAKEN ACTION on __ number or more mailings (influenced by other ACTION filters. For instance, you could combine them to say people who have taken action on 2 or more mailers with *CRIMINAL JUSTICE tags)
+
+  - Zipcode radius. Include people a number of miles in a radius out from a specific zipcode.
+*/
+
+
+/* This CTE brings in identifying user information from ActionKit for people who are Subscribed. It joins to user phone numbers.
+*/
+WITH ak AS (
+    SELECT
+        users.id AS ak_userid
+        , users.first_name
+        , users.last_name
+        , users.email
+        , RIGHT(REGEXP_replace(phone, '[-]|[[:space:]]|[(]|[)]|[a-z]', ''),10) AS phone_clean
+            -- Only keep numbers
+            -- Only keep the 10 right most digits (to remove the country code)
+        , UPPER(users.city) AS ak_city
+        , users.state AS ak_state
+        , users.zip AS ak_zip
+        , ROW_NUMBER() OVER (PARTITION BY users.id ORDER BY phones.updated_at DESC) AS rank_phones
+    FROM coc_ak.core_user AS users
+    LEFT JOIN coc_ak.core_phone AS phones
+        ON users.id = phones.user_id
+    WHERE users.subscription_status = 'subscribed'
+
+    -- FOR TESTING !
+    --ORDER BY ak_userid DESC
+    --LIMIT 2000
+)
+
+/* This CTE cleans duplicate phone numbers, ranked by most recently updated.
+*/
+, ak_phone_dedup AS (
+    SELECT *
+    FROM ak
+    WHERE rank_phones = 1 -- dedup phones from ak CTE
+)
+
+
+/* In this CTE, count the number of mailings a user has RECEIVED. 
+Can also customize filter for whether a user has received a specific mailings, mailings with specific tags, or within 
+a time range.
+*/
+, ak_mailings AS (
+    SELECT DISTINCT
+        ak_phone_dedup.*
+        , COUNT(DISTINCT usermailings.mailing_id) AS count_received
+    FROM ak_phone_dedup
+    LEFT JOIN coc_ak.core_usermailing AS usermailings  
+        ON ak_phone_dedup.ak_userid = usermailings.user_id
+    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
+        ON usermailings.mailing_id = mailingtags.mailing_id
+    LEFT JOIN coc_ak.core_tag AS tags 
+        ON mailingtags.tag_id = tags.id
+    WHERE usermailings.created_at BETWEEN {{received_mailings_start_date}} AND {{received_mailings_end_date}}
+        {{filter_received_mailing_ids}}AND usermailings.mailing_id IN ({{received_mailing_ids}})
+        ({{received_mailing_tags}})
+            /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
+            For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
+            */
+)
+
+
+/* This CTE is cleaning up fields by only selecting those needed in the rest of the script.
+*/
+, ak_clean AS (
+    SELECT 
+        ak_userid
+        , first_name
+        , last_name
+        , email
+        , phone_clean AS phone
+        , ak_city
+        , ak_state
+        , ak_zip
+    FROM ak_mailings
+)
+
+
+/* In this CTE, add flag for whether someone is marked as Active (on list 1 but not list 8) 
+*/
+, ak_active AS (
+    SELECT 
+        ak_clean.ak_userid 
+        , CASE WHEN subs.list_id IS NOT NULL THEN 'Y' ELSE NULL
+            END AS flag_ak_active
+    FROM ak_clean
+    INNER JOIN coc_ak.core_subscription AS subs
+        ON ak_clean.ak_userid = subs.user_id
+        AND list_id = 1 
+        AND list_id <> 8
+)
+
+
+/* In this CTE, count the number of mailings a user has OPENED. 
+Can also customize filter for whether a user has opened a specific mailings, mailings with specific tags, or within 
+a time range.
+*/
+, ak_opens AS (
+    SELECT DISTINCT
+        ak_clean.ak_userid 
+        , COUNT(DISTINCT opens.mailing_id) AS count_opens
+    FROM ak_clean
+    INNER JOIN coc_ak.core_open AS opens
+        ON opens.user_id = ak_clean.ak_userid
+    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
+        ON opens.mailing_id = mailingtags.mailing_id
+    LEFT JOIN coc_ak.core_tag AS tags 
+        ON mailingtags.tag_id = tags.id
+    WHERE opens.created_at BETWEEN {{opened_mailings_start_date}} AND {{opened_mailings_end_date}}
+        {{filter_opened_mailing_ids}}AND opens.mailing_id IN ({{opened_mailing_ids}})
+        {{opened_mailing_tags}}
+            /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
+            For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
+            */
+    GROUP BY ak_clean.ak_userid
+) 
+
+
+/* In this CTE, count the number of ACTIONS a user has taken. 
+Can also customize filter for whether a user has taken action on specific mailings, specific pages, mailings and
+pages with specific tags (to be filtered in the ak_combined CTE below), or within a time range.
+*/
+, ak_actions_filter AS(
+    SELECT DISTINCT
+        ak_clean.ak_userid 
+        , COUNT(actions.id) AS count_actions
+    FROM ak_clean
+    INNER JOIN coc_ak.core_action AS actions
+        ON ak_clean.ak_userid = actions.user_id
+        AND NOT EXISTS ( -- Not including 'actions' that are unsubscribes
+            SELECT 1
+            FROM coc_ak.core_subscriptionhistory AS subhist
+            JOIN coc_ak.core_subscriptionchangetype AS changes
+            ON changes.id = subhist.change_id
+            WHERE actions.id = subhist.action_id
+            AND changes.subscribed = 0
+        )
+    INNER JOIN coc_ak.core_page AS pages
+        ON actions.page_id = pages.id
+        AND real_actions = 1
+    LEFT JOIN coc_ak.core_page_tags AS pagetags
+        ON actions.page_id = pagetags.page_id
+    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
+        ON actions.mailing_id = mailingtags.mailing_id
+    LEFT JOIN coc_ak.core_tag AS tags 
+        ON pagetags.tag_id = tags.id
+        OR mailingtags.tag_id = tags.id
+    WHERE actions.created_at BETWEEN {{actions_mailings_start_date}} AND {{actions_mailings_end_date}}
+        {{filter_actions_mailing_ids}}AND actions.mailing_id IN ({{actions_mailing_ids}})
+        {{filter_actions_page_ids}}AND actions.page_id IN ({{actions_page_ids}})
+        {{actions_mailing_tags}}
+            /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
+            For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
+            */
+    GROUP BY ak_clean.ak_userid
+)
+
+
+/* Combine CTEs ak_clean , ak_active, ak_opens, and ak_actions. 
+In this CTE, apply filters for being on the Active list, mailers received, opened, or taken action on (where filters
+applied in previous CTEs carry over).
+*/
+, ak_combined AS (
+    SELECT
+      ak_clean.*
+      , flag_ak_active
+      , count_received
+      , count_opens
+      , count_actions
+      , 'a'::varchar AS match_key  -- Artificial field for matching geography in later CTE
+    FROM ak_clean
+    LEFT JOIN ak_active
+      ON ak_clean.ak_userid = ak_active.ak_userid
+    LEFT JOIN ak_opens
+      ON ak_clean.ak_userid = ak_opens.ak_userid
+    LEFT JOIN ak_actions_filter
+      ON ak_clean.ak_userid = ak_actions_filter.ak_userid
+    WHERE count_received >= {{received_mailing_count}}
+        AND count_opens >= {{opened_mailing_count}}
+        AND count_actions >= {{actions_mailing_count}}
+       {{ak_active}}AND ak_active = 'Y'
+)
+
+
+/* Joining AK data to demographic data in the voterfile. 
+Referencing this table coc_reporting.ak_vf_member_demographics: https://platform.civisanalytics.com/spa/#/scripts/sql/107750822 
+*/
+, vf_join AS (
+    SELECT 
+        ak_combined.*
+        , demos.age AS age_filter
+        , demos.gender AS gender_filter
+        , demos.race AS race_filter
+        , demos.presidential_general_turnout_score AS presidential_turnout_score_filter
+        , UPPER(demos.vb_city) AS vf_city
+        , demos.vb_state AS vf_state
+        , demos.vb_zip AS vf_zip
+    FROM ak_combined
+    LEFT JOIN coc_reporting.ak_vf_member_demographics AS demos
+        ON ak_combined.ak_userid = demos.ak_userid
+        AND latest_voterbase_id_match = 1 -- Specify that we only want to voterfile record that most recently matched to an AK user.
+)
+
+
+/* This CTE allows the requester to choose whether geography fields should be sourced from EveryAction or the voterfile by 
+editing the match_key.
+*/
+, vf_geography AS (
+    SELECT
+        vf_join.ak_userid
+        , vf_join.vf_city
+        , vf_join.vf_state
+        , vf_join.vf_zip
+        /* Leave as 'b' if you want location fields to come from ActionKit.
+        Replace with 'a' if you want location fields to come from the voter file. */
+        , '{{geography_source}}'::varchar AS match_key  --  Artificial field for matching geography in later CTE
+    FROM vf_join
+)
+
+
+/* This CTE connects AK voterfile and location data. You can choose to filter by states, cities, or zipcodes.
+*/
+, base AS (
+    SELECT
+        vf_join.ak_userid
+        , vf_join.first_name
+        , vf_join.last_name
+        , vf_join.email
+        , vf_join.phone
+        , vf_join.age_filter
+        , vf_join.gender_filter
+        , vf_join.race_filter
+        , vf_join.presidential_turnout_score_filter
+        /* For geograghy fields, in the vf_geography CTE the match_key could be edited to bring in fields from the voter file instead of EveryAction. If the match_key
+ is not edited, the voter file geography fields will not match and fields from EA will be brought in automatically. All fields are checking for the existence of
+ vf_city because some records may not have all state, city, and zipcode present. */
+        , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_city ELSE ak_city END AS city
+        , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_state ELSE ak_state END AS state
+        , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_zip ELSE ak_zip END AS zipcode
+        , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
+    FROM vf_join
+    LEFT JOIN vf_geography
+        ON vf_join.ak_userid = vf_geography.ak_userid
+        AND vf_join.match_key = vf_geography.match_key
+    WHERE vf_join.ak_userid IS NOT NULL
+        /* FILTER LOCATION */
+        {{filter_states}} AND state IN ({{states}})
+        {{filter_cities}} AND city IN ({{cities}})
+        {{filter_zipcode}} AND zipcode IN ({{zipcodes}})
+)
+
+
+/* FILTER AGE
+In this CTE, the age field can be filtered to an age range. To not filter by age, leave the range as 0 to 0.
+*/
+, vf_age AS(
+SELECT
+ base.*
+ , CASE WHEN age_filter >= {{minimum_age}} AND age_filter <= {{maximum_age}}
+     THEN 1 ELSE 0
+   END AS age_flag
+ /* If NO filter is applied to age, all records will be marked as 1 and kept in the vf_age_clean CTE.
+ IF a filter IS applied to age, only records within that age range will be marked as 1 and kept in the vf_age_clean CTE. */
+   , RANK () OVER (PARTITION BY match_key_2 ORDER BY age_flag DESC) AS rank_age_flag
+FROM base
+)
+ 
+, vf_age_clean AS(
+SELECT
+   vf_age.*
+FROM vf_age
+WHERE rank_age_flag = 1
+)
+ 
+ 
+/* FILTER GENDER
+In this CTE, the gender field can be filtered. To not filter by gender, leave the code as is. */
+, vf_gender AS(
+SELECT
+ vf_age_clean.*
+ , CASE WHEN gender_filter IN ({{gender}})  -- PUT PARAMETERS HERE: 'Female', 'Male', 'Gender Expansive', 'Unknown'
+     THEN 1 ELSE 0
+   END AS gender_flag
+ /* If NO filter is applied to gender, all records will be marked as 1 and kept in the vf_gender_clean CTE.
+ IF a filter IS applied to gender, only records with those gender(s) will be marked as 1 and kept in the vf_gender_clean CTE. */
+   , RANK () OVER (PARTITION BY match_key_2 ORDER BY gender_flag DESC) AS rank_gender_flag
+FROM vf_age_clean
+)
+ 
+, vf_gender_clean AS(
+SELECT
+   vf_gender.*
+FROM vf_gender
+WHERE rank_gender_flag = 1
+)
+ 
+ 
+/* FILTER RACE
+In this CTE, the grace field can be filtered. To not filter by race, leave the code as is. */
+, vf_race AS(
+SELECT
+ vf_gender_clean.*
+ , CASE WHEN race_filter IN ({{race}})  -- PUT PARAMETERS HERE: 'African-American', 'Asian', 'Caucasian', 'Hispanic', 'Native American', 'Other', 'Unknown'
+     THEN 1 ELSE 0
+   END AS race_flag
+ /* If NO filter is applied to race, all records will be marked as 1 and kept in the vf_race_clean CTE.
+ IF a filter IS applied to race, only records with those gender(s) will be marked as 1 and kept in the vf_race_clean CTE. */
+   , RANK () OVER (PARTITION BY match_key_2 ORDER BY race_flag DESC) AS rank_race_flag
+FROM vf_gender_clean
+)
+ 
+, vf_race_clean AS(
+SELECT
+   vf_race.*
+FROM vf_race
+WHERE rank_race_flag = 1
+)
+ 
+ 
+/* FILTER PRESIDENTIAL TURNOUT SCORE
+In this CTE, the presidential turnout score can be filterd to a range. To not filter, leave the range as 0 to 0. */
+, vf_turnoutscore AS(
+SELECT
+ vf_race_clean.*
+ , CASE WHEN presidential_turnout_score_filter >= {{minimum_presidential_turnout_score}} AND presidential_turnout_score_filter <= {{maximum_presidential_turnout_score}}
+     THEN 1 ELSE 0
+   END AS turnoutscore_flag
+ /* If NO filter is applied to the presidential turnout score, all records will be marked as 1 and kept in the vf_turnoutscore_clean CTE.
+ IF a filter IS applied to the presidential turnout score, only records with the score range will be marked as 1 and kept in the vf_turnoutscore_clean CTE. */
+   , RANK () OVER (PARTITION BY match_key_2 ORDER BY turnoutscore_flag DESC) AS rank_turnoutscore_flag
+FROM vf_race_clean
+)
+ 
+, vf_turnoutscore_clean AS(
+SELECT
+   vf_turnoutscore.*
+FROM vf_turnoutscore
+WHERE rank_turnoutscore_flag = 1
+)
+
+
+/* FILTER ON RADIUS AROUND A ZIPCODE
+With the zip_filter and zip_radius CTEs, the list can be filtered to people within a specific mile radius of a zipcode.
+This code structure is based on this script: https://platform.civisanalytics.com/spa/#/scripts/sql/22210226
+*/
+, zip_filter AS (
+SELECT
+ zip_lat_long.lat::decimal(38,6) AS lat2
+ , zip_lat_long.lng::decimal(38,6) AS lon2
+ , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
+FROM communal_data_assets.zip_lat_long
+WHERE zip = '{{zipcode_for_radius}}' -- Customize this zip code. Only one allowed.
+)
+ 
+, zip_radius AS (
+SELECT
+ vf_turnoutscore_clean.*
+ , zip_lat_long.lat::decimal(38,6) AS lat1
+ , zip_lat_long.lng::decimal(38,6) AS lon1
+ , 2 * 3961 * asin(sqrt((sin(radians((lat2 - lat1) / 2))) ^ 2 + cos(radians(lat1)) * cos(radians(lat2)) * (sin(radians((lon2 - lon1) / 2))) ^ 2))
+     AS distance
+FROM vf_turnoutscore_clean
+LEFT JOIN zip_filter
+ ON vf_turnoutscore_clean.match_key_2 = zip_filter.match_key_2
+LEFT JOIN communal_data_assets.zip_lat_long
+ ON vf_turnoutscore_clean.zipcode = zip_lat_long.zip
+{{filter_radius}} WHERE distance <= {{radius_distance}} -- 1 is a mile.
+)
+
+
+/* COUNTS AND FLAGS */
+/* Count number of donations through ActBlue in the last 6 months (180 days).
+Joins to the coc_reporting.donation_base_20210226 table. 
+*/
+, donations AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(donations_base.transaction_id) AS count_donations_180days
+FROM zip_radius
+LEFT JOIN coc_reporting.donation_base_20210226 AS donations_base
+ ON zip_radius.ak_userid = donations_base.user_id
+ AND donations_base.transaction_date_utc >= (SELECT GETDATE()-180)
+GROUP BY 1
+)
+
+
+/*  Count number of emails received in the last week. 
+*/
+, ak_emails AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(core_usermailing.mailing_id) AS count_ak_emails_received_1week
+FROM zip_radius
+INNER JOIN coc_ak.core_user
+ ON zip_radius.ak_userid = core_user.id
+INNER JOIN coc_ak.core_usermailing
+ ON core_user.id = core_usermailing.user_id
+ AND core_usermailing.created_at >= (SELECT GETDATE()-7)
+GROUP BY 1
+)
+
+
+/* Count number of AK actions in the last 6 months (180 days). 
+*/
+, ak_actions AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(core_action.id) AS count_ak_actions_180days
+FROM zip_radius
+INNER JOIN coc_ak.core_user
+ ON zip_radius.ak_userid = core_user.id
+INNER JOIN coc_ak.core_action
+ ON core_user.id = core_action.user_id
+ AND core_action.created_at >= (SELECT GETDATE()-180)
+ AND NOT EXISTS ( -- not including 'actions' that are unsubscribes
+   SELECT 1
+   FROM coc_ak.core_subscriptionhistory AS subhist
+   JOIN coc_ak.core_subscriptionchangetype AS changes
+     ON changes.id = subhist.change_id
+   WHERE core_action.id = subhist.action_id
+     AND changes.subscribed = 0
+   )
+INNER JOIN coc_ak.core_page
+ ON core_action.page_id = core_page.id
+ AND real_actions = 1
+GROUP BY 1
+)
+
+
+/* Flag if someone is currently opted in to Mobile Commons. Matches ActionKit user to Mobile Commons through phone number. */
+, mobile_commons AS (
+SELECT
+ zip_radius.ak_userid
+ , 'Y' AS opt_in_mobile_commons
+FROM zip_radius
+INNER JOIN coc_mobilecommons.profiles
+ ON zip_radius.phone = RIGHT(profiles.phone_number, 10)
+ AND status = 'Active Subscriber'
+ AND opted_out_at IS NULL
+)
+
+
+/* Count number of messages (broadcasts) received in the last one week. Matches ActionKit user to Mobile Commons through phone number. */
+, mobile_commons_messages AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(sent_messages.broadcast_id) AS count_sms_text_received_1week
+FROM zip_radius
+INNER JOIN coc_mobilecommons.profiles
+ ON zip_radius.phone = RIGHT(profiles.phone_number, 10)
+ AND status = 'Active Subscriber'
+ AND opted_out_at IS NULL
+INNER JOIN coc_mobilecommons.sent_messages
+ ON profiles.phone_number = sent_messages.phone_number
+ AND sent_messages.sent_at >= (SELECT GETDATE()-7)
+ AND sent_messages.type <> 'opt_out_receipt'
+GROUP BY 1
+)
+
+
+/* Count number of event attendances in the last 6 months (180 days). Matches ActionKit to EveryAction through email address. 
+Refers to coc_reporting.ea_mob_eventattendance table: https://platform.civisanalytics.com/spa/#/scripts/sql/143629861  
+*/
+, ea_events AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(DISTINCT unique_eventid) AS count_event_attendances_180days
+FROM zip_radius
+INNER JOIN coc_reporting.ea_mob_eventattendance
+ ON zip_radius.email = ea_mob_eventattendance.attendee_email
+WHERE event_date >= (SELECT GETDATE()-180)
+GROUP BY 1
+)
+ 
+ 
+/* Count number of event sign ups in the last 6 months (180 days). Matches ActionKit to EveryAction through email address. 
+Refers to coc_reporting.ea_eventsignsups code: https://platform.civisanalytics.com/spa/#/scripts/sql/132952165 */
+, ea_attendances AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(DISTINCT (event_id ||'.'|| event_shiftid)) AS count_event_signups_180days
+FROM zip_radius
+INNER JOIN coc_reporting.ea_eventsignups
+ ON zip_radius.email = ea_eventsignups.attendee_email
+WHERE event_shiftdate >= (SELECT GETDATE()-180)
+GROUP BY 1
+)
+
+
+/* Count number of p2p text conversations received in the last one week. Matches ActionKit user to ThruText through phone number. */
+, thrutext AS (
+SELECT
+ zip_radius.ak_userid
+ , COUNT(DISTINCT conversation_id) AS count_p2p_text_received_1week
+FROM zip_radius
+INNER JOIN tmc_thrutext.coc_messages
+ ON zip_radius.phone = RIGHT(coc_messages.contact_phone, 10)
+WHERE ttimestamp  >= (SELECT GETDATE()-7)
+ AND message_direction = 'outgoing'
+GROUP BY 1
+)
+
+
+SELECT
+    zip_radius.ak_userid
+    , zip_radius.first_name
+    , zip_radius.last_name
+    , zip_radius.email
+    , zip_radius.phone
+    , zip_radius.city
+    , zip_radius.state
+    , zip_radius.zipcode
+    /* For demographic fields, I am checking whether a filter was applied and some records have a flag of 1 instead of 0.
+ If all records have flag = 0 (meaning no filter was applied), then the demographic will populate as NULL.
+ If some records have flag <> 0 (meaning the filter was applied), then the demographic field will populate with real data. */
+   , CASE WHEN age_flag <> 0
+       THEN age_filter ELSE NULL
+       END AS age
+   , CASE WHEN gender_flag <> 0
+       THEN gender_filter ELSE NULL
+       END AS gender
+   , CASE WHEN race_flag <> 0
+       THEN race_filter ELSE NULL
+       END AS race
+   , CASE WHEN turnoutscore_flag <> 0
+       THEN presidential_turnout_score_filter ELSE NULL
+       END AS presidential_turnout_score
+    , count_ak_emails_received_1week
+    , count_ak_actions_180days
+    , count_donations_180days
+    , opt_in_mobile_commons
+    , count_sms_text_received_1week
+    , count_event_attendances_180days
+    , count_event_signups_180days
+    , count_p2p_text_received_1week
+FROM zip_radius
+LEFT JOIN ak_emails
+    ON zip_radius.ak_userid = ak_emails.ak_userid
+LEFT JOIN donations
+    ON zip_radius.ak_userid = donations.ak_userid
+LEFT JOIN ak_actions
+    ON zip_radius.ak_userid = ak_actions.ak_userid
+LEFT JOIN mobile_commons
+    ON zip_radius.ak_userid = mobile_commons.ak_userid
+LEFT JOIN mobile_commons_messages
+    ON zip_radius.ak_userid = mobile_commons_messages.ak_userid
+LEFT JOIN ea_events
+    ON zip_radius.ak_userid = ea_events.ak_userid
+LEFT JOIN ea_attendances
+    ON zip_radius.ak_userid = ea_attendances.ak_userid
+LEFT JOIN thrutext
+    ON zip_radius.ak_userid = thrutext.ak_userid
