@@ -95,10 +95,11 @@ a time range.
         ON mailingtags.tag_id = tags.id
     WHERE usermailings.created_at BETWEEN {{received_mailings_start_date}} AND {{received_mailings_end_date}}
         {{filter_received_mailing_ids}}AND usermailings.mailing_id IN ({{received_mailing_ids}})
-        ({{received_mailing_tags}})
+        {{received_mailing_tags}}
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
+    GROUP BY 1,2,3,4,5,6,7,8,9
 )
 
 
@@ -288,7 +289,7 @@ editing the match_key.
         /* FILTER LOCATION */
         {{filter_states}} AND state IN ({{states}})
         {{filter_cities}} AND city IN ({{cities}})
-        {{filter_zipcode}} AND zipcode IN ({{zipcodes}})
+        {{filter_zipcodes}} AND zipcode IN ({{zipcodes}})
 )
 
 
