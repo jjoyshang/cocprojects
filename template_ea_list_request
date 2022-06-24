@@ -10,6 +10,7 @@ vanid
 , city  -- Can filter by this field
 , state  -- Can filter by this field
 , zipcode  -- Can filter by this field
+, county  -- Can filter by this field
 , age  -- Only populates when this field is used as a filter
 , gender  -- Only populates when this field is used as a filter
 , race  -- Only populates when this field is used as a filter
@@ -51,8 +52,11 @@ SELECT DISTINCT
  , UPPER(attendee_city) AS ea_city
  , attendee_state AS ea_state
  , attendee_zip AS ea_zip
+ , , zip_county_lookup.vb_tsmart_county_name. AS ea_county
  , 'a'::varchar AS match_key  -- Artificial field for matching geography in later CTE
 FROM coc_reporting.ea_mob_eventattendance
+LEFT JOIN communal_data_assets.zip_county_lookup
+  ON zip_county_lookup.vb_tsmart_zip = ea_mob_eventattendance.attendee_zip
 WHERE attendee_id IS NOT NULL
  {{filter_event_id}} AND unique_eventid IN ({{event_ids}})
  {{filter_event_name}} AND event_name IN ({{event_names}})
@@ -93,11 +97,14 @@ SELECT
  , UPPER(city) AS vf_city
  , state AS vf_state
  , zip AS vf_zip
+ , zip_county_lookup.vb_tsmart_county_name. AS vf_county
 FROM ea_2
 LEFT JOIN coc_reporting.vf_attendee_demographics AS demos
  ON ea_2.vanid = demos.attendee_id
  AND latest_voterbase_id_match = 1 -- needed to only include the demos.attendee_id that TMC most recently matched to a voter file records
  AND latest_attendance_rank = 1 -- needed to only one attendance record for each demos.attendee_id
+LEFT JOIN communal_data_assets.zip_county_lookup
+  ON demos.zip = zip_county_lookup.vb_tsmart_zip
 )
  
  
@@ -109,6 +116,7 @@ SELECT
  , vf_join.vf_city
  , vf_join.vf_state
  , vf_join.vf_zip
+ , vf_join.vf_county
  /* Leave as 'b' if you want location fields to come from EveryAction.
  Replace with 'a' if you want location fields to come from the voter file. */
  , '{{geography_source}}'::varchar AS match_key  -- Artificial field for matching geography in later CTE
@@ -136,6 +144,7 @@ SELECT
    , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_city ELSE ea_city END AS city
    , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_state ELSE ea_state END AS state
    , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_zip ELSE ea_zip END AS zipcode
+   , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_county ELSE ea_county END AS county
  , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
 FROM ea_2
 LEFT JOIN vf_join
@@ -148,6 +157,7 @@ WHERE ea_2.vanid IS NOT NULL
  {{filter_state}} AND state IN ({{states}})
  {{filter_city}} AND city IN ({{cities}})
  {{filter_zipcode}} AND zipcode IN ({{zipcodes}})
+ {{filter_counties}} AND county IN ({{counties}})
 )
  
  
