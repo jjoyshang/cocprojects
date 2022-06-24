@@ -58,10 +58,13 @@ WITH ak AS (
         , UPPER(users.city) AS ak_city
         , users.state AS ak_state
         , users.zip AS ak_zip
+        , zip_county_lookup.vb_tsmart_county_name. AS ak_county
         , ROW_NUMBER() OVER (PARTITION BY users.id ORDER BY phones.updated_at DESC) AS rank_phones
     FROM coc_ak.core_user AS users
     LEFT JOIN coc_ak.core_phone AS phones
         ON users.id = phones.user_id
+    LEFT JOIN communal_data_assets.zip_county_lookup
+        ON uzers.zip = zip_county_lookup.vb_tsmart_zip
     WHERE users.subscription_status = 'subscribed'
 
     -- FOR TESTING !
@@ -95,7 +98,7 @@ a time range.
         ON mailingtags.tag_id = tags.id
     WHERE usermailings.created_at BETWEEN {{received_mailings_start_date}} AND {{received_mailings_end_date}}
         {{filter_received_mailing_ids}}AND usermailings.mailing_id IN ({{received_mailing_ids}})
-        {{received_mailing_tags}}
+        {{filter_received_mailing_tags}}AND {{received_mailing_tags}}
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
@@ -115,6 +118,7 @@ a time range.
         , ak_city
         , ak_state
         , ak_zip
+        , ak_county
         , count_received
     FROM ak_mailings
 )
@@ -152,7 +156,7 @@ a time range.
         ON mailingtags.tag_id = tags.id
     WHERE opens.created_at BETWEEN {{opened_mailings_start_date}} AND {{opened_mailings_end_date}}
         {{filter_opened_mailing_ids}}AND opens.mailing_id IN ({{opened_mailing_ids}})
-        {{opened_mailing_tags}}
+        {{filter_opened_mailing_tags}}AND {{opened_mailing_tags}}
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
@@ -192,7 +196,7 @@ pages with specific tags (to be filtered in the ak_combined CTE below), or withi
     WHERE actions.created_at BETWEEN {{actions_mailings_start_date}} AND {{actions_mailings_end_date}}
         {{filter_actions_mailing_ids}}AND actions.mailing_id IN ({{actions_mailing_ids}})
         {{filter_actions_page_ids}}AND actions.page_id IN ({{actions_page_ids}})
-        {{actions_mailing_tags}}
+        {{filter_actions_mailing_tags}}AND {{actions_mailing_tags}}
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
@@ -239,10 +243,13 @@ Referencing this table coc_reporting.ak_vf_member_demographics: https://platform
         , UPPER(demos.vb_city) AS vf_city
         , demos.vb_state AS vf_state
         , demos.vb_zip AS vf_zip
+        , zip_county_lookup.vb_tsmart_county_name AS vf_county
     FROM ak_combined
     LEFT JOIN coc_reporting.ak_vf_member_demographics AS demos
         ON ak_combined.ak_userid = demos.ak_userid
         AND latest_voterbase_id_match = 1 -- Specify that we only want to voterfile record that most recently matched to an AK user.
+    LEFT JOIN communal_data_assets.zip_county_lookup
+        ON demos.vb_zip = zip_county_lookup.vb_zip
 )
 
 
@@ -255,6 +262,7 @@ editing the match_key.
         , vf_join.vf_city
         , vf_join.vf_state
         , vf_join.vf_zip
+        , vf_join.vf_county
         /* Leave as 'b' if you want location fields to come from ActionKit.
         Replace with 'a' if you want location fields to come from the voter file. */
         , '{{geography_source}}'::varchar AS match_key  --  Artificial field for matching geography in later CTE
@@ -281,6 +289,7 @@ editing the match_key.
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_city ELSE ak_city END AS city
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_state ELSE ak_state END AS state
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_zip ELSE ak_zip END AS zipcode
+        , CASE WHEN vf_geography.vf_county IS NOT NULL THEN vf_geography.vf_county ELSE ak_county END AS county
         , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
     FROM vf_join
     LEFT JOIN vf_geography
@@ -291,6 +300,7 @@ editing the match_key.
         {{filter_states}} AND state IN ({{states}})
         {{filter_cities}} AND city IN ({{cities}})
         {{filter_zipcodes}} AND zipcode IN ({{zipcodes}})
+        {{filter_zipcodes}} AND county IN ({{zipcodes}})
 )
 
 
