@@ -45,155 +45,56 @@ Other filters included in the code (which are not reflected in output fields):
 */
 
 
-/* This CTE brings in identifying user information from ActionKit for people who are Subscribed. It joins to user phone numbers.
-*/
-WITH ak AS (
-    SELECT
-        users.id AS ak_userid
-        , users.first_name
-        , users.last_name
-        , users.email
-        , RIGHT(REGEXP_replace(phone, '[-]|[[:space:]]|[(]|[)]|[a-z]', ''),10) AS phone_clean
-            -- Only keep numbers
-            -- Only keep the 10 right most digits (to remove the country code)
-        , UPPER(users.city) AS ak_city
-        , users.state AS ak_state
-        , users.zip AS ak_zip
-        , zip_county_lookup.vb_tsmart_county_name AS ak_county
-        , ROW_NUMBER() OVER (PARTITION BY users.id ORDER BY phones.updated_at DESC) AS rank_phones
-    FROM coc_ak.core_user AS users
-    LEFT JOIN coc_ak.core_phone AS phones
-        ON users.id = phones.user_id
-    LEFT JOIN communal_data_assets.zip_county_lookup
-        ON users.zip = zip_county_lookup.vb_tsmart_zip
-    WHERE users.subscription_status = 'subscribed'
-
-    -- FOR TESTING !
-    --ORDER BY ak_userid DESC
-    --LIMIT 2000
-)
-
-/* This CTE cleans duplicate phone numbers, ranked by most recently updated.
-*/
-, ak_phone_dedup AS (
-    SELECT *
-    FROM ak
-    WHERE rank_phones = 1 -- dedup phones from ak CTE
-)
-
-
 /* In this CTE, count the number of mailings a user has RECEIVED. 
 Can also customize filter for whether a user has received a specific mailings, mailings with specific tags, or within 
 a time range.
+Referencing coc_reporting.akrequests_xf2__ak_mailings: https://platform.civisanalytics.com/spa/#/scripts/sql/160785666
 */
-, ak_mailings AS (
-    SELECT DISTINCT
-        ak_phone_dedup.*
-        , COUNT(DISTINCT usermailings.mailing_id) AS count_received
-    FROM ak_phone_dedup
-    LEFT JOIN coc_ak.core_usermailing AS usermailings  
-        ON ak_phone_dedup.ak_userid = usermailings.user_id
-    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
-        ON usermailings.mailing_id = mailingtags.mailing_id
-    LEFT JOIN coc_ak.core_tag AS tags 
-        ON mailingtags.tag_id = tags.id
-    WHERE usermailings.created_at BETWEEN {{received_mailings_start_date}} AND {{received_mailings_end_date}}
-        {{filter_received_mailing_ids}}AND usermailings.mailing_id IN ({{received_mailing_ids}})
-        {{filter_received_mailing_tags}}AND {{received_mailing_tags}}
-            /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
-            For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
-            */
-    GROUP BY 1,2,3,4,5,6,7,8,9
-)
-
-
-/* This CTE is cleaning up fields by only selecting those needed in the rest of the script.
-*/
-, ak_clean AS (
-    SELECT 
-        ak_userid
-        , first_name
-        , last_name
-        , email
-        , phone_clean AS phone
-        , ak_city
-        , ak_state
-        , ak_zip
-        , ak_county
-        , count_received
-    FROM ak_mailings
-)
-
-
-/* In this CTE, add flag for whether someone is marked as Active (on list 1 but not list 8) 
-*/
-, ak_active AS (
-    SELECT 
-        ak_clean.ak_userid 
-        , CASE WHEN subs.list_id IS NOT NULL THEN 'Y' ELSE NULL
-            END AS flag_ak_active
-    FROM ak_clean
-    INNER JOIN coc_ak.core_subscription AS subs
-        ON ak_clean.ak_userid = subs.user_id
-        AND list_id = 1 
-        AND list_id <> 8
+WITH ak_received AS (
+  SELECT 
+    ak_userid
+    , COUNT(DISTINCT mailing_id) AS count_received
+  FROM coc_reporting.akrequests_xf2__ak_mailings AS mailings
+  WHERE mailings.created_at BETWEEN {{received_mailings_start_date}} AND {{received_mailings_end_date}}
+    {{filter_received_mailing_ids}}AND mailings.mailing_id IN ({{received_mailing_ids}})
+    {{filter_received_mailing_tags}}AND {{received_mailing_tags}}
+        /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
+        For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
+        */
+  GROUP BY 1
 )
 
 
 /* In this CTE, count the number of mailings a user has OPENED. 
 Can also customize filter for whether a user has opened a specific mailings, mailings with specific tags, or within 
 a time range.
+Referencing coc_reporting.akrequests_xf3__ak_opens: https://platform.civisanalytics.com/spa/#/scripts/sql/160786169
 */
 , ak_opens AS (
-    SELECT DISTINCT
-        ak_clean.ak_userid 
+    SELECT
+        ak_userid 
         , COUNT(DISTINCT opens.mailing_id) AS count_opens
-    FROM ak_clean
-    INNER JOIN coc_ak.core_open AS opens
-        ON opens.user_id = ak_clean.ak_userid
-    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
-        ON opens.mailing_id = mailingtags.mailing_id
-    LEFT JOIN coc_ak.core_tag AS tags 
-        ON mailingtags.tag_id = tags.id
+    FROM coc_reporting.akrequests_xf3__ak_opens AS opens
     WHERE opens.created_at BETWEEN {{opened_mailings_start_date}} AND {{opened_mailings_end_date}}
         {{filter_opened_mailing_ids}}AND opens.mailing_id IN ({{opened_mailing_ids}})
         {{filter_opened_mailing_tags}}AND {{opened_mailing_tags}}
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
-    GROUP BY ak_clean.ak_userid
+    GROUP BY 1
 ) 
 
 
 /* In this CTE, count the number of ACTIONS a user has taken. 
 Can also customize filter for whether a user has taken action on specific mailings, specific pages, mailings and
 pages with specific tags (to be filtered in the ak_combined CTE below), or within a time range.
+Referencing coc_reporting.akrequests_xf4__ak_actions: https://platform.civisanalytics.com/spa/#/scripts/sql/161363382
 */
-, ak_actions_filter AS(
-    SELECT DISTINCT
-        ak_clean.ak_userid 
-        , COUNT(actions.id) AS count_actions
-    FROM ak_clean
-    INNER JOIN coc_ak.core_action AS actions
-        ON ak_clean.ak_userid = actions.user_id
-        AND NOT EXISTS ( -- Not including 'actions' that are unsubscribes
-            SELECT 1
-            FROM coc_ak.core_subscriptionhistory AS subhist
-            JOIN coc_ak.core_subscriptionchangetype AS changes
-            ON changes.id = subhist.change_id
-            WHERE actions.id = subhist.action_id
-            AND changes.subscribed = 0
-        )
-    INNER JOIN coc_ak.core_page AS pages
-        ON actions.page_id = pages.id
-        AND real_actions = 1
-    LEFT JOIN coc_ak.core_page_tags AS pagetags
-        ON actions.page_id = pagetags.page_id
-    LEFT JOIN coc_ak.core_mailing_tags AS mailingtags
-        ON actions.mailing_id = mailingtags.mailing_id
-    LEFT JOIN coc_ak.core_tag AS tags 
-        ON pagetags.tag_id = tags.id
-        OR mailingtags.tag_id = tags.id
+, ak_actions AS(
+    SELECT
+        ak_userid 
+        , COUNT(DISTINCT action_id) AS count_actions
+    FROM coc_reporting.akrequests_xf4__ak_actions AS actions
     WHERE actions.created_at BETWEEN {{actions_mailings_start_date}} AND {{actions_mailings_end_date}}
         {{filter_actions_mailing_ids}}AND actions.mailing_id IN ({{actions_mailing_ids}})
         {{filter_actions_page_ids}}AND actions.page_id IN ({{actions_page_ids}})
@@ -201,33 +102,39 @@ pages with specific tags (to be filtered in the ak_combined CTE below), or withi
             /* In order to accommodate different logic for the tag filter, it's easier to code in the parameter. 
             For instance, we may want to filter for mailers with '@MDEJ' AND '*HEALTH JUSTICE' OR '*REPRODUCTIVE JUSTICE' tags.
             */
-    GROUP BY ak_clean.ak_userid
+    GROUP BY 1
 )
 
 
 /* Combine CTEs ak_clean , ak_active, ak_opens, and ak_actions. 
 In this CTE, apply filters for being on the Active list, mailers received, opened, or taken action on (where filters
 applied in previous CTEs carry over).
+Referencing coc_reporting.akrequests_xf1__user_summary: https://platform.civisanalytics.com/spa/#/scripts/sql/160783474
 */
 , ak_combined AS (
     SELECT
-      ak_clean.*
-      , flag_ak_active
-      , count_received
-      , count_opens
-      , count_actions
+      user_summary.ak_userid
+      , user_summary.first_name
+      , user_summary.last_name
+      , user_summary.email
+      , user_summary.phone
+      , user_summary.ak_city
+      , user_summary.ak_state
+      , user_summary.ak_zip
+      , user_summary.ak_county
+      , user_summary.flag_ak_active
       , 'a'::varchar AS match_key  -- Artificial field for matching geography in later CTE
-    FROM ak_clean
-    LEFT JOIN ak_active
-      ON ak_clean.ak_userid = ak_active.ak_userid
-    LEFT JOIN ak_opens
-      ON ak_clean.ak_userid = ak_opens.ak_userid
-    LEFT JOIN ak_actions_filter
-      ON ak_clean.ak_userid = ak_actions_filter.ak_userid
-    WHERE count_received >= {{received_mailing_count}}
-        AND count_opens >= {{opened_mailing_count}}
-        AND count_actions >= {{actions_mailing_count}}
-       {{ak_active}}AND ak_active = 'Y'
+    FROM coc_reporting.akrequests_xf1__user_summary AS user_summary
+    INNER JOIN ak_received
+      ON user_summary.ak_userid = ak_received.ak_userid
+      AND count_received >= {{received_mailing_count}}
+    INNER JOIN ak_opens
+      ON user_summary.ak_userid = ak_opens.ak_userid
+      AND count_opens >= {{opened_mailing_count}}
+    INNER JOIN ak_actions
+      ON user_summary.ak_userid = ak_actions_filter.ak_userid
+      AND count_actions >= {{actions_mailing_count}}
+    {{ak_active}}WHERE user_summary.ak_active = 'Y'
 )
 
 
