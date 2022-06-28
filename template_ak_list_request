@@ -10,6 +10,7 @@ ak_userid
 , city  -- Can filter by this field
 , state  -- Can filter by this field
 , zipcode  -- Can filter by this field
+, county  -- Can filter by this field
 , age  -- Only populates when this field is used as a filter
 , gender  -- Only populates when this field is used as a filter
 , race  -- Only populates when this field is used as a filter
@@ -58,13 +59,13 @@ WITH ak AS (
         , UPPER(users.city) AS ak_city
         , users.state AS ak_state
         , users.zip AS ak_zip
-        , zip_county_lookup.vb_tsmart_county_name. AS ak_county
+        , zip_county_lookup.vb_tsmart_county_name AS ak_county
         , ROW_NUMBER() OVER (PARTITION BY users.id ORDER BY phones.updated_at DESC) AS rank_phones
     FROM coc_ak.core_user AS users
     LEFT JOIN coc_ak.core_phone AS phones
         ON users.id = phones.user_id
     LEFT JOIN communal_data_assets.zip_county_lookup
-        ON uzers.zip = zip_county_lookup.vb_tsmart_zip
+        ON users.zip = zip_county_lookup.vb_tsmart_zip
     WHERE users.subscription_status = 'subscribed'
 
     -- FOR TESTING !
@@ -289,7 +290,7 @@ editing the match_key.
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_city ELSE ak_city END AS city
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_state ELSE ak_state END AS state
         , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_zip ELSE ak_zip END AS zipcode
-        , CASE WHEN vf_geography.vf_county IS NOT NULL THEN vf_geography.vf_county ELSE ak_county END AS county
+        , CASE WHEN vf_geography.vf_city IS NOT NULL THEN vf_geography.vf_county ELSE ak_county END AS county
         , 'c'::varchar AS match_key_2  -- Artificial field for matching zip code in later CTE
     FROM vf_join
     LEFT JOIN vf_geography
@@ -300,7 +301,7 @@ editing the match_key.
         {{filter_states}} AND state IN ({{states}})
         {{filter_cities}} AND city IN ({{cities}})
         {{filter_zipcodes}} AND zipcode IN ({{zipcodes}})
-        {{filter_zipcodes}} AND county IN ({{zipcodes}})
+        {{filter_counties}} AND county IN ({{counties}})
 )
 
 
