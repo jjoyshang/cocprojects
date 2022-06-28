@@ -52,7 +52,7 @@ SELECT DISTINCT
  , UPPER(attendee_city) AS ea_city
  , attendee_state AS ea_state
  , attendee_zip AS ea_zip
- , , zip_county_lookup.vb_tsmart_county_name. AS ea_county
+ , zip_county_lookup.vb_tsmart_county_name. AS ea_county
  , 'a'::varchar AS match_key  -- Artificial field for matching geography in later CTE
 FROM coc_reporting.ea_mob_eventattendance
 LEFT JOIN communal_data_assets.zip_county_lookup
