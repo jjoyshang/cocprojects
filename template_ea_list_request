@@ -77,8 +77,8 @@ SELECT
 FROM ea
 LEFT JOIN coc_reporting.ea_mob_eventattendance 
   ON ea.vanid = ea_mob_eventattendance.attendee_id
-{{filter_count_attendances}} WHERE event_date BETWEEN '{{count_attendances_start_date}}' AND '{{count_attendances_end_date}}'
-GROUP BY 1,2,3,4,5,6,7,8,9
+{{filter_count_attendances}} WHERE event_date BETWEEN {{count_attendances_start_date}} AND {{count_attendances_end_date}}
+GROUP BY 1,2,3,4,5,6,7,8,9,10
 HAVING count_attendances >= {{count_attendances}}
 )
 
