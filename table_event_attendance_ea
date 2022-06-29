@@ -27,7 +27,9 @@ SELECT
         END AS ea_eventtype
         -- ^Relabeling Allies events from Courtwatch to Training
   			-- ^Included for filtering.
-     , coc_locations.state As ea_eventstate 
+    , coc_locations.city AS ea_eventcity
+    , coc_locations.state As ea_eventstate
+    , coc_locations.zip5 AS ea_eventzip 
         -- ^Included for filtering.
     , ROW_NUMBER () OVER (PARTITION BY coc_events.eventid ORDER BY coc_eventslocations.datemodified DESC) AS rank_eventlocation
         
@@ -135,7 +137,9 @@ SELECT
     , ea_date
     , ea_eventname
   	, ea_eventtype
-    , ea_eventstate 
+    , ea_eventcity
+    , ea_eventstate
+    , ea_eventzip 
   	, ea_attendeesid
   	, ea_eventrole
     , ea_firstname
