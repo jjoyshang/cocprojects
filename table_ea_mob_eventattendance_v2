@@ -51,7 +51,7 @@ LEFT JOIN coc_mobilize_pac.events
 
 , pac_dedup AS (
 SELECT *
-FROM mobc4
+FROM mobpac
 WHERE rank_vanjoin = 1
 )
 
@@ -77,7 +77,9 @@ SELECT
   , ea_date AS event_date
   , ea_eventname AS event_name
   , ea_eventtype AS event_type
+  , ea_eventcity AS event_city
   , ea_eventstate AS event_state
+  , ea_eventzip AS event_zip
   , NVL(temp_region.region, 'Unknown') AS rfm_region
   	-- ^Simplifying this field. Formally referenced location of the event as "event_region". Now only reflects the region of the event owner, as defined by how staff are organized.
   , mob_eventowner AS event_owner
