@@ -1,0 +1,191 @@
+/* This script pulls sign ups to a specific event in EveryAction, including vanid, name, and phone number. 
+Then it randomly orders the sign ups using RANDOM() in order to split into groups after the table is exported.
+
+Extra fields are included in CTEs, such as date, entity, and status created source. While these are not used in the 
+current script, I am anticipating a future where we are running this test on different events and these fields will
+be useful to filter on. OR we can attach additional information to members for analysis.
+*/
+
+
+/* First CTEs modified from coc_reporting.ea_eventsignups table: https://platform.civisanalytics.com/spa/#/scripts/sql/132952165 
+*/
+
+DROP TABLE IF EXISTS coc_reporting.recruitment_miami_childrens_carnival_220730;
+CREATE TABLE coc_reporting.recruitment_miami_childrens_carnival_220730 AS
+
+WITH events AS (
+SELECT
+    coc_events.eventid AS event_id
+    --, LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS ea_date
+        -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
+        -- ^Included for filtering.
+    , coc_events.eventname AS event_name
+        -- ^Included for filtering.
+    /*, CASE
+        WHEN coc_events.createdby = '1960269' THEN 'PAC'
+        WHEN coc_events.createdby = '1931224' THEN 'c4'
+        ELSE NULL
+      END AS entity
+    , CASE
+            WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
+            ELSE coc_events.eventcalendarname
+            END AS event_type*/
+            -- ^Relabeling Allies events from Courtwatch to Training
+                -- ^Included for filtering.
+FROM tmc_van.coc_events
+WHERE coc_events.eventid = '750060752' -- CUSTOMIZE THIS !
+)
+
+
+, attendees AS (
+SELECT DISTINCT
+  events.*
+  , signups.eventshiftid AS event_shiftid
+  , TO_TIMESTAMP(shifts.datetimeoffsetbegin, 'YYYY-MM-DD HH24:MI:SS') AS event_shiftdate
+  /* For events with multiple shifts, the shift date is more accurate than the overall event date. 
+  Formatting from varchar to timestamp. */
+  , signups.eventsignupid AS attendee_signupid
+  , signups.inputtypeid
+  , signups.vanid
+  , signups.eventrolename AS attendee_role
+  , phone AS phone
+  , CASE WHEN preferredphone = 1 THEN 1
+      ELSE ROW_NUMBER () OVER (PARTITION BY signups.vanid ORDER BY phones.datemodified DESC) 
+      END AS rank_phones
+FROM events
+LEFT JOIN tmc_van.coc_eventsignups AS signups
+	ON events.event_id = signups.eventid
+LEFT JOIN tmc_van.coc_eventshifts AS shifts
+  ON signups.eventshiftid = shifts.eventshiftid
+LEFT JOIN tmc_van.coc_contactsphones_mym AS phones
+  ON phones.vanid = signups.vanid
+)
+
+
+, dedup_attendees AS (
+  SELECT attendees.*
+    , contacts.firstname AS first_name
+    , contacts.lastname AS last_name
+    , ROW_NUMBER () OVER (PARTITION BY attendees.vanid ORDER BY contacts.datemodified DESC) AS rank_names
+  FROM attendees
+  LEFT JOIN tmc_van.coc_contacts_mym AS contacts
+    ON contacts.vanid = attendees.vanid
+  WHERE rank_phones = 1
+)
+
+
+, dedup_names AS (
+  SELECT *
+  FROM dedup_attendees
+  WHERE rank_names = 1
+)
+
+
+, base AS (
+SELECT
+  dedup_names.*
+  , statuses.eventsignupseventstatusid AS attendee_signupsstatusid
+  , CASE
+        WHEN statuses.createdby = '1960269' THEN 'Mobilize PAC'
+        WHEN statuses.createdby = '1931224' THEN 'Mobilize c4'
+        WHEN statuses.createdby = '1399286' THEN 'ThruText'
+        WHEN statuses.createdby = '1781028' THEN 'Open VPB'
+        ELSE NULL
+      END AS temp_statuses_api
+    -- ^ Reformatting statuses created by API to the platform name
+  , NVL(contacttypes.contacttypename, temp_statuses_api, input.inputtypename)  AS status_createdby_temp
+    /* ^ Cascading to the most specific name of how a status is created. The most specific is the contacttypename which shows
+    the type of real contact, such as a One on One. The next the name of the API that created the status, if relevant. Last 
+    is inputtypename which shows VPB, Bulk, Manual, or API. */
+  , CASE WHEN temp_statuses_api IS NULL
+      THEN NVL(contacts.canvassedby, statuses.createdby)
+      ELSE NULL
+    END AS status_creatorid
+    /* ^ First, only taking user ids when the status creator is NOT an api. If it is an api, I will get the api id.
+    Then cascading to the most specific user of which person created a status. The contacts.canvassedby shows who talked to the 
+    member in a real contact, such as a One on One. The statuses.createdby shows the name of the EA user who added
+    the status. */
+  , CASE WHEN status_createdby_temp = 'API' AND status_creatorid IS NOT NULL THEN 'Manual'
+      ELSE status_createdby_temp
+      END AS status_createdby
+    /* ^ Seeing in the backend that Manual statuses are erroneously being called API, when in EA they are manually added by a 
+    user. This field is fixing this by saying, when the status is created by API but it was created by a user in EA, call
+    it 'Manual' instead. */
+  , statuses.datemodified AS status_datemodified
+FROM dedup_names
+LEFT JOIN tmc_van.coc_eventsignupsstatuses AS statuses
+	ON dedup_names.attendee_signupid = statuses.eventsignupid
+LEFT JOIN tmc_van.coc_contactscontacts_mym AS contacts
+  ON statuses.contactscontactid = contacts.contactscontactid
+LEFT JOIN tmc_van.tsm_tmc_inputtypes AS input
+  ON contacts.inputtypeid = input.inputtypeid
+  OR dedup_names.inputtypeid = input.inputtypeid
+LEFT JOIN tmc_van.tsm_tmc_contacttypes AS contacttypes
+  ON contacts.contacttypeid = contacttypes.contacttypeid
+  
+WHERE statuses.eventstatusname IN ('Scheduled', 'Sched-Web', 'Invited')
+)
+
+, dedup_statuses AS (
+SELECT *
+  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, status_createdby, status_creatorid ORDER BY status_datemodified DESC)
+    AS status_rank 
+  /* For each event and person, I want to get rid of status changes that are from the same source and same day. For example,
+  if someone as marked as Sched-Web from ThruText twice on the same day I only want one records. But I will include both records
+  for if someone was marked as Sched-Web from ThruText and Mobilize on the same day, or if someone was marked as Sched-Web
+  in Mobilize on two different days. */
+FROM base
+)
+
+
+, base_2 AS (
+SELECT 
+  event_id
+  , event_name
+  , event_shiftid
+  , event_shiftdate
+  , dedup_statuses.vanid
+  , first_name
+  , last_name
+  , phone
+  , attendee_role
+  --, attendee_signupid
+  --, attendee_signupsstatusid
+  , CASE WHEN status_createdby = 'OpenVPB' THEN 'Open VPB'
+    ELSE status_createdby
+      END AS status_createdby
+    -- ^ Combine Open VPB categories
+  , NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) 
+      AS status_creatorname
+    -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
+FROM dedup_statuses
+LEFT JOIN tmc_van.tsm_tmc_users
+	ON tsm_tmc_users.userid = status_creatorid
+LEFT JOIN tmc_van.coc_publicusers
+	ON coc_publicusers.publicuserid = status_creatorid
+WHERE status_rank = 1
+)
+
+
+, clean AS (
+  SELECT DISTINCT
+  event_id
+  , event_name
+  , event_shiftdate
+  , vanid
+  , first_name
+  , last_name
+  , phone
+  , attendee_role
+FROM base_2
+)
+
+SELECT *
+  , RANDOM() * 100 AS random_order
+  , ROW_NUMBER () OVER (ORDER BY random_order ASC) AS assign_numbers 
+FROM clean
+;
+
+-- Grant access:
+GRANT SELECT ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO GROUP coc;
+GRANT ALL ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO jshang, jharris1;
