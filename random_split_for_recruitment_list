@@ -155,9 +155,21 @@ SELECT
     ELSE status_createdby
       END AS status_createdby
     -- ^ Combine Open VPB categories
-  , NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) 
-      AS status_creatorname
+  --, NVL( (tsm_tmc_users.lastname || ', '::varchar || tsm_tmc_users.firstname), coc_publicusers.publicusername ) AS status_creatorname
     -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
+    , CASE 
+        WHEN status_createdby = 'Mobilize c4' THEN 1
+        WHEN status_createdby = 'Mobilize PAC' THEN 1
+        WHEN status_createdby = 'ThruText' THEN 2
+        WHEN status_createdby = 'Manual' THEN 2
+        WHEN status_createdby = 'SMS Text' THEN 2
+        WHEN status_createdby = 'Open VPB' THEN 2
+        WHEN status_createdby = 'VPB' THEN 2
+        WHEN status_createdby = 'Phone' THEN 2  
+        WHEN status_createdby = 'Script View' THEN 2
+        ELSE NULL
+        END AS status_createdby_sort 
+    , ROW_NUMBER () OVER (PARTITION BY event_id, dedup_statuses.vanid ORDER BY status_createdby_sort ASC) AS status_createdby_filter
 FROM dedup_statuses
 LEFT JOIN tmc_van.tsm_tmc_users
 	ON tsm_tmc_users.userid = status_creatorid
@@ -165,7 +177,6 @@ LEFT JOIN tmc_van.coc_publicusers
 	ON coc_publicusers.publicuserid = status_creatorid
 WHERE status_rank = 1
 )
-
 
 , clean AS (
   SELECT DISTINCT
@@ -177,12 +188,18 @@ WHERE status_rank = 1
   , last_name
   , phone
   , attendee_role
+  , CASE WHEN status_createdby_sort = 1 THEN 'Mobilize'
+        WHEN status_createdby_sort = 2 THEN 'Not in Mobilize'
+        ELSE NULL
+       END AS mobilize_source
 FROM base_2
+WHERE status_createdby_filter = 1
 )
 
 SELECT *
-  , RANDOM() * 100 AS random_order
-  , ROW_NUMBER () OVER (ORDER BY random_order ASC) AS assign_numbers 
+    , CASE WHEN mobilize_source <> 'Mobilize' THEN 'Not in Mobilize' ELSE NULL END AS trial_group
+    , CASE WHEN mobilize_source = 'Mobilize' THEN (RANDOM() * 100) ELSE NULL END AS random_order
+    , CASE WHEN random_order IS NOT NULL THEN (ROW_NUMBER () OVER (ORDER BY random_order ASC)) ELSE NULL END AS assign_numbers 
 FROM clean
 ;
 
