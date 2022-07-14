@@ -10,8 +10,8 @@ be useful to filter on. OR we can attach additional information to members for a
 /* First CTEs modified from coc_reporting.ea_eventsignups table: https://platform.civisanalytics.com/spa/#/scripts/sql/132952165 
 */
 
-DROP TABLE IF EXISTS coc_reporting.recruitment_miami_childrens_carnival_220730;
-CREATE TABLE coc_reporting.recruitment_miami_childrens_carnival_220730 AS
+DROP TABLE IF EXISTS coc_reporting.recruitment_miami_childrens_carnival_220730; -- CUSTOMIZE !
+CREATE TABLE coc_reporting.recruitment_miami_childrens_carnival_220730 AS -- CUSTOMIZE !
 
 WITH events AS (
 SELECT
@@ -169,7 +169,11 @@ SELECT
         WHEN status_createdby = 'Script View' THEN 2
         ELSE NULL
         END AS status_createdby_sort 
+    /* Because people who are not scheduled in Mobilize will not get automated texts, they need to be split into a separate
+    group with a different Confirm experience. 
+    */
     , ROW_NUMBER () OVER (PARTITION BY event_id, dedup_statuses.vanid ORDER BY status_createdby_sort ASC) AS status_createdby_filter
+      -- ^ Deduping for each person. If they are scheduled in Mobilize grab that record first.
 FROM dedup_statuses
 LEFT JOIN tmc_van.tsm_tmc_users
 	ON tsm_tmc_users.userid = status_creatorid
@@ -204,5 +208,5 @@ FROM clean
 ;
 
 -- Grant access:
-GRANT SELECT ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO GROUP coc;
-GRANT ALL ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO jshang, jharris1;
+GRANT SELECT ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO GROUP coc; -- CUSTOMIZE !
+GRANT ALL ON coc_reporting.recruitment_miami_childrens_carnival_220730 TO jshang, jharris1; -- CUSTOMIZE !
