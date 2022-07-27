@@ -77,8 +77,12 @@ SELECT
 FROM ea
 LEFT JOIN coc_reporting.ea_mob_eventattendance 
   ON ea.vanid = ea_mob_eventattendance.attendee_id
-{{filter_count_attendances}} WHERE event_date BETWEEN {{count_attendances_start_date}} AND {{count_attendances_end_date}}
 GROUP BY 1,2,3,4,5,6,7,8,9,10
+WHERE unique_eventid IS NOT NULL
+  {{filter_count_attendances}}AND event_date BETWEEN {{count_attendances_start_date}} AND {{count_attendances_end_date}}
+  {{filter_event_cities}}AND UPPER(event_city) IN ({{event_cities}})
+  {{filter_event_states}}AND event_state IN ({{event_states}})
+  {{filter_event_zips}}AND event_zip IN ({{event_zips}})
 HAVING count_attendances >= {{count_attendances}}
 )
 
