@@ -6,12 +6,17 @@ CREATE TABLE coc_reporting.ea_eventsignups AS
 https://platform.civisanalytics.com/spa/#/scripts/sql/100953079 */
 WITH events AS (
 SELECT DISTINCT
-  ea_eventid AS event_id
-  , ea_eventname AS event_name
-  , ea_eventtype AS event_type
-FROM coc_reporting.ea_eventattendance
-WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
-  ea_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
+  unique_eventid AS ea_eventid
+  , entity
+  , event_name
+  , event_type
+  , event_city
+  , event_state 
+  , event_zip
+  , event_owner
+FROM coc_reporting.ea_mob_eventattendance
+--WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
+  --ea_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
   -- ^ Filtering to the analysis window
   --event_id = '750036570'
   -- ^ event with multiple inputtype and contacts records, for checking
@@ -27,30 +32,76 @@ SELECT DISTINCT
   Formatting from varchar to timestamp. */
   , signups.eventsignupid AS attendee_signupid
   , signups.inputtypeid
-  , signups.vanid
+  , signups.vanid AS ea_attendeesid
   , signups.eventrolename AS attendee_role
-  , emails.email AS attendee_email
-  /* Bringing in email so that in the next CTE I can filter out attendees with a COC email, indicating that they are 
-  actually a staff member.*/
-  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, signups.vanid ORDER BY emails.datemodified DESC) AS emaildupe
-  -- In the next CTE, used to only include the most recently modified email per person.
 FROM events
 LEFT JOIN tmc_van.coc_eventsignups AS signups
-	ON events.event_id = signups.eventid
+	ON events.ea_eventid = signups.eventid
 LEFT JOIN tmc_van.coc_eventshifts AS shifts
   ON signups.eventshiftid = shifts.eventshiftid
-LEFT JOIN tmc_van.coc_contactsemails_mym AS emails
-  ON emails.vanid = signups.vanid
+)
+
+, base3 AS (
+  SELECT
+  attendees.*
+  , coc_contacts_mym.firstname AS ea_firstname
+  , coc_contacts_mym.lastname AS ea_lastname
+  , coc_contactsaddresses_mym.city AS ea_attendeescity
+  , coc_contactsaddresses_mym.state AS ea_attendeesstate
+  , coc_contactsaddresses_mym.zip5 AS ea_attendeeszip 
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsaddresses_mym.datemodified DESC) AS rank_addresses
+FROM attendees
+LEFT JOIN tmc_van.coc_contacts_mym
+  ON coc_contacts_mym.vanid = attendees.ea_attendeesid
+LEFT JOIN tmc_van.coc_contactsaddresses_mym
+  ON coc_contactsaddresses_mym.vanid = attendees.ea_attendeesid
+) 
+
+, dedup3 AS (
+SELECT *
+FROM base3
+WHERE rank_addresses = 1
+)
+
+, base4 AS (
+SELECT
+  dedup3.*
+  , coc_contactsemails_mym.email AS ea_attendeesemail
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsemails_mym.datemodified DESC) AS rank_email
+FROM dedup3
+LEFT JOIN tmc_van.coc_contactsemails_mym
+  ON dedup3.ea_attendeesid = coc_contactsemails_mym.vanid
+)
+
+, dedup4 AS (
+SELECT *
+FROM base4
+WHERE rank_email = 1
+)
+
+, base5 AS (
+SELECT
+  dedup4.*
+  , coc_contactsphones_mym.phone AS ea_attendeesphone
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, ea_attendeesid ORDER BY coc_contactsphones_mym.datemodified DESC) AS rank_phone
+FROM dedup4
+  LEFT JOIN tmc_van.coc_contactsphones_mym
+    ON dedup4.ea_attendeesid = coc_contactsphones_mym.vanid
+)
+
+, dedup5 AS (
+SELECT *
+FROM base5
+WHERE rank_phone= 1
 )
 
 , attendees_clean AS (
 SELECT
-  attendees.*
-FROM attendees
-WHERE emaildupe = 1
-  AND attendee_email NOT LIKE '%@colorofchange.org'
+  dedup5.*
+FROM dedup5
+WHERE ea_attendeesemail NOT LIKE '%@colorofchange.org'
     -- ^ Filter out COC emails, which we assume are staff.
-  AND attendee_email NOT IN (
+  AND ea_attendeesemail NOT IN (
     'Meleemewilson@gmail.com'
     , 'jvharris02@gmail.com'
     , 'derrickquarles@yahoo.com'
@@ -111,7 +162,7 @@ SELECT
   , statuses.datemodified AS status_datemodified
   , CASE WHEN 
       attendee_status IN ('No Show', 'Completed') THEN
-        ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, attendees_clean.vanid ORDER BY status_datemodified DESC)
+        ROW_NUMBER () OVER (PARTITION BY ea_eventid, event_shiftid, attendees_clean.ea_attendeesid ORDER BY status_datemodified DESC)
       ELSE 1
     END AS noshow_completes_rank
       /* For No Shows or Completes, I only want the most recently updated status. I do not want duplicates if this has been
@@ -138,7 +189,7 @@ WHERE noshow_completes_rank = 1
 
 , dedup2 AS (
 SELECT *
-  , ROW_NUMBER () OVER (PARTITION BY event_id, event_shiftid, vanid, attendee_status, status_createdby, status_creatorid, 
+  , ROW_NUMBER () OVER (PARTITION BY ea_eventid, event_shiftid, ea_attendeesid, attendee_status, status_createdby, status_creatorid, 
   TO_DATE(status_datecreated, 'YYYY-MM-DD') ORDER BY status_datemodified DESC)
     AS status_rank 
   /* For each event and person, I want to get rid of status changes that are from the same source and same day. For example,
@@ -149,17 +200,28 @@ FROM dedup1
 )
 
 SELECT 
-  event_id
+  ea_eventid
+  , entity
   , event_name
   , event_type
   , event_shiftid
   , event_shiftdate
-  , dedup2.vanid
-  , attendee_email
-  , attendee_role
-  , attendee_status
-  , attendee_signupid
-  , attendee_signupsstatusid
+  , event_city
+  , event_state 
+  , event_zip
+  , event_owner AS mob_eventowner
+  , dedup2.ea_attendeesid AS ea_userid
+  , ea_firstname AS user_firstname
+	, ea_lastname AS user_lastname
+  , ea_attendeesemail AS user_email
+  , ea_attendeesphone AS user_phone
+  , ea_attendeescity AS user_city
+	, ea_attendeesstate AS user_state
+	, ea_attendeeszip AS user_zip
+  , attendee_signupid AS ea_signupid
+  , attendee_role AS signup_role
+  , attendee_status AS signup_status
+  , attendee_signupsstatusid AS ea_signupsstatusid
   , CASE WHEN status_createdby = 'OpenVPB' THEN 'Open VPB'
     ELSE status_createdby
       END AS status_createdby
@@ -169,6 +231,9 @@ SELECT
     -- ^ Bringing in the last and first name of users/volunteers based on their EA user id.
   , status_datecreated
   , status_datemodified
+  , ROW_NUMBER() OVER(PARTITION BY ea_eventid, event_shiftid, ea_userid ORDER BY status_datemodified DESC) AS most_recent_signup_status
+  , ROW_NUMBER () OVER (PARTITION BY ea_userid ORDER BY event_shiftdate DESC) AS latest_signup_rank
+  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
 FROM dedup2
 LEFT JOIN tmc_van.tsm_tmc_users
 	ON tsm_tmc_users.userid = status_creatorid
