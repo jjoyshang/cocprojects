@@ -2,24 +2,108 @@ DROP TABLE IF EXISTS coc_reporting.ea_eventsignups;
 CREATE TABLE coc_reporting.ea_eventsignups AS
 
 
-/* Bringing event information from the EA Event Attendance table I made before, which has preformatted and cleaned event info. 
-https://platform.civisanalytics.com/spa/#/scripts/sql/100953079 */
-WITH events AS (
-SELECT DISTINCT
-  unique_eventid AS ea_eventid
+WITH base1 AS (
+SELECT
+    coc_events.eventid AS ea_eventid
+    --, LEFT (coc_events.dateoffsetbegin, CHARINDEX('.', coc_events.dateoffsetbegin) -1) AS ea_date
+        -- ^Reformats the date & time to present nicer in the graph. With this, Sisense will condense the date to ##.Month
+        -- ^Included for filtering.
+    , CASE
+        WHEN coc_events.createdby = '1960269' THEN 'PAC'
+        WHEN coc_events.createdby = '1931224' THEN 'c4'
+        ELSE NULL
+      END AS entity
+    , coc_events.eventname AS event_name
+        -- ^Included for filtering.
+  	, CASE
+    	  WHEN coc_events.eventname LIKE '%_allies' THEN 'Training'
+          ELSE coc_events.eventcalendarname
+        END AS event_type
+        -- ^Relabeling Allies events from Courtwatch to Training
+  			-- ^Included for filtering.
+    , coc_locations.city AS event_city
+    , coc_locations.state As event_state
+    , coc_locations.zip5 AS event_zip 
+        -- ^Included for filtering.
+    , ROW_NUMBER () OVER (PARTITION BY coc_events.eventid ORDER BY coc_eventslocations.datemodified DESC) AS rank_eventlocation
+        
+FROM tmc_van.coc_events
+LEFT JOIN tmc_van.coc_eventslocations
+	ON coc_eventslocations.eventid = coc_events.eventid
+     -- ^In EA, coc_eventslocations table joins event ids to a location ids (which is why I also need to join coc_locations table). However, this table does not include addresses.
+LEFT JOIN tmc_van.coc_locations
+	ON coc_locations.locationid = coc_eventslocations.locationid
+
+WHERE coc_events.dateoffsetbegin BETWEEN '2020-09-01 00:00:00' AND (SELECT GETDATE ())
+    -- ^Filter between Sept 2020 and the current date for the 2020 General election season.
+  AND coc_events.eventname NOT LIKE '%Cancelled%'
+    -- ^Filter out cancelled events. I don't believe there is a field in EA for when an event is cancelled. However, this will at least remove events where the event name includes 'Cancelled'.
+)
+
+, dedup_events AS (
+SELECT *
+FROM base1
+WHERE rank_eventlocation = 1
+)
+
+
+, mobc4 AS (
+SELECT 
+  van_id
+  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+  , ROW_NUMBER () OVER (PARTITION BY van_id ORDER BY van_events.modified_date DESC) AS rank_vanjoin
+FROM coc_mobilize_c4.coc_mobilize_c4_van_events AS van_events
+LEFT JOIN coc_mobilize_c4.coc_mobilize_c4_events AS events
+  ON van_events.event_id = events.id
+
+--WHERE events.created_date BETWEEN '2022-02-01' AND (SELECT GETDATE ()) -- ! For testing !
+--WHERE events.created_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
+)
+
+, c4_dedup AS (
+SELECT *
+FROM mobc4
+WHERE rank_vanjoin = 1
+)
+
+, mobpac AS (
+SELECT 
+  van_id
+  , (events.owner__family_name || ', ' || events.owner__given_name) AS mob_eventowner
+  , ROW_NUMBER () OVER (PARTITION BY van_id ORDER BY van_events.modified_date DESC) AS rank_vanjoin
+FROM  coc_mobilize_pac.van_events
+LEFT JOIN coc_mobilize_pac.events
+  ON van_events.event_id = events.id
+
+--WHERE events.created_date BETWEEN '2022-02-01' AND (SELECT GETDATE ()) -- ! For testing !
+--WHERE events.created_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
+)
+
+, pac_dedup AS (
+SELECT *
+FROM mobpac
+WHERE rank_vanjoin = 1
+)
+
+, mob_combined AS (
+SELECT van_id, mob_eventowner FROM c4_dedup
+UNION
+SELECT van_id, mob_eventowner FROM pac_dedup
+)
+
+, events AS (
+SELECT 
+  ea_eventid
   , entity
   , event_name
   , event_type
   , event_city
   , event_state 
   , event_zip
-  , event_owner
-FROM coc_reporting.ea_mob_eventattendance
---WHERE --ea_date BETWEEN '2021-10-01' AND '2021-11-30'
-  --ea_date BETWEEN '2020-09-01' AND (SELECT GETDATE ())
-  -- ^ Filtering to the analysis window
-  --event_id = '750036570'
-  -- ^ event with multiple inputtype and contacts records, for checking
+  , mob_eventowner
+FROM dedup_events
+LEFT JOIN mob_combined
+  ON mob_combined.van_id = dedup_events.ea_eventid
 )
 
 
@@ -209,7 +293,7 @@ SELECT
   , event_city
   , event_state 
   , event_zip
-  , event_owner AS mob_eventowner
+  , mob_eventowner
   , dedup2.ea_attendeesid AS ea_userid
   , ea_firstname AS user_firstname
 	, ea_lastname AS user_lastname
