@@ -90,7 +90,7 @@ Can also customize filter for whether a user has taken action on specific mailin
 pages with specific tags (to be filtered in the ak_combined CTE below), or within a time range.
 Referencing coc_reporting.akrequests_xf4__ak_actions: https://platform.civisanalytics.com/spa/#/scripts/sql/161363382
 */
-, ak_actions AS(
+, ak_actions_filter AS(
     SELECT
         ak_userid 
         , COUNT(DISTINCT action_id) AS count_actions
@@ -131,10 +131,10 @@ Referencing coc_reporting.akrequests_xf1__user_summary: https://platform.civisan
     INNER JOIN ak_opens
       ON user_summary.ak_userid = ak_opens.ak_userid
       AND count_opens >= {{opened_mailing_count}}
-    INNER JOIN ak_actions
+    INNER JOIN ak_actions_filter
       ON user_summary.ak_userid = ak_actions_filter.ak_userid
       AND count_actions >= {{actions_mailing_count}}
-    {{ak_active}}WHERE user_summary.ak_active = 'Y'
+    {{ak_active}}WHERE user_summary.flag_ak_active = 'Y'
 )
 
 
@@ -157,7 +157,7 @@ Referencing this table coc_reporting.ak_vf_member_demographics: https://platform
         ON ak_combined.ak_userid = demos.ak_userid
         AND latest_voterbase_id_match = 1 -- Specify that we only want to voterfile record that most recently matched to an AK user.
     LEFT JOIN communal_data_assets.zip_county_lookup
-        ON demos.vb_zip = zip_county_lookup.vb_zip
+        ON demos.vb_zip = zip_county_lookup.vb_tsmart_zip
 )
 
 
@@ -440,10 +440,10 @@ Refers to coc_reporting.ea_eventsignsups code: https://platform.civisanalytics.c
 , ea_attendances AS (
 SELECT
  zip_radius.ak_userid
- , COUNT(DISTINCT (event_id ||'.'|| event_shiftid)) AS count_event_signups_180days
+ , COUNT(DISTINCT (ea_eventid ||'.'|| event_shiftid)) AS count_event_signups_180days
 FROM zip_radius
 INNER JOIN coc_reporting.ea_eventsignups
- ON zip_radius.email = ea_eventsignups.attendee_email
+ ON zip_radius.email = ea_eventsignups.user_email
 WHERE event_shiftdate >= (SELECT GETDATE()-180)
 GROUP BY 1
 )
