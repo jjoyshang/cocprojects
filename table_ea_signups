@@ -1,3 +1,10 @@
+/*  Create a table that pulls together relevant fields from EveryAction of people signed up for an event. I am describing a
+'sign up' as being marked with any status, including 'Scheduled', 'Sched-Web', 'Invited', 'Cancelled', 'Confirmed',
+'Conf Twice', 'No Show', and 'Completed'.
+
+The table brings in Event Owner information from Mobilize America, which is not available in EveryAction.
+*/
+
 DROP TABLE IF EXISTS coc_reporting.ea_eventsignups;
 CREATE TABLE coc_reporting.ea_eventsignups AS
 
@@ -316,8 +323,10 @@ SELECT
   , status_datecreated
   , status_datemodified
   , ROW_NUMBER() OVER(PARTITION BY ea_eventid, event_shiftid, ea_userid ORDER BY status_datemodified DESC) AS most_recent_signup_status
+    -- ^ For each user, event, and shift ranks the most recent sign up status
   , ROW_NUMBER () OVER (PARTITION BY ea_userid ORDER BY event_shiftdate DESC) AS latest_signup_rank
-  		-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+  	-- ^Adding in order to easily be able to filter for the latest record when I want a count of unique attendees, not all attendances.
+  , ROW_NUMBER () OVER (PARTITION BY ea_userid ORDER BY event_shiftdate ASC) AS first_signup_rank
 FROM dedup2
 LEFT JOIN tmc_van.tsm_tmc_users
 	ON tsm_tmc_users.userid = status_creatorid
